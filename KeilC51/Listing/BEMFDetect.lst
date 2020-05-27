@@ -1,0 +1,571 @@
+C51 COMPILER V9.52.0.0   BEMFDETECT                                                        04/16/2020 10:07:50 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE BEMFDETECT
+OBJECT MODULE PLACED IN .\Output\BEMFDetect.obj
+COMPILER INVOKED BY: D:\Keil4\C51\BIN\C51.EXE ..\User\Source\Function\BEMFDetect.c LARGE OMF2 WARNINGLEVEL(0) OPTIMIZE(5
+                    -,SPEED) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\BEMFDetect.lst) T
+                    -ABS(2) OBJECT(.\Output\BEMFDetect.obj)
+
+line level    source
+
+   1          /**************************** (C) COPYRIGHT 2017 Fortiortech shenzhen *****************************
+   2          * File Name          : BEMFDetect.c
+   3          * Author             : Fortiortech  Appliction Team
+   4          * Version            : V1.0
+   5          * Date               : 10-Apr-2017
+   6          * Description        : This file contains BEMF detection used for Motor Control.
+   7          ***************************************************************************************************
+   8          * All Rights Reserved
+   9          **************************************************************************************************/
+  10          
+  11          
+  12          /* Includes -------------------------------------------------------------------------------------*/
+  13          #include <FU68xx_2.h>
+  14          #include <Myproject.h>
+  15          
+  16          /* Private typedef ------------------------------------------------------------------------------*/
+  17          /* Private define -------------------------------------------------------------------------------*/
+  18          /* Private macro --------------------------------------------------------------------------------*/
+  19          /* Private variables ----------------------------------------------------------------------------*/
+  20          
+  21          /* Private function prototypes ------------------------------------------------------------------*/
+  22          /* Private functions ----------------------------------------------------------------------------*/
+  23          
+  24          BEMFDetect_TypeDef xdata BEMFDetect;
+  25          
+  26          /*---------------------------------------------------------------------------*/
+  27          /* Name   : void BEMFDetectInit(void)
+  28          /* Input  : NO
+  29          /* Output : NO
+  30          /* Description: BEMF的初始化，包括变量初始化，使能比较器
+  31          /*---------------------------------------------------------------------------*/
+  32          void BEMFDetectInit(void)
+  33          {
+  34   1        
+  35   1          //BEMF检测前关闭mos输出
+  36   1          BEMFDetect.BEMFSpeed =0;
+  37   1          BEMFDetect.BEMFSpeedBase =0;
+  38   1          BEMFDetect.BEMFStatus = 0;
+  39   1          BEMFDetect.FRStatus      = mcFRState.TargetFR;
+  40   1          BEMFDetect.BEMFTimeCount = BEMF_START_DETECT_TIME;//初始反电动势检测时间
+  41   1      
+  42   1          BEMFDetect.BEMFSpeedInitStatus =0;
+  43   1          BEMFDetect.FlagSpeedCal =0;
+  44   1          BEMFDetect.BEMFStartStatus =0;
+  45   1      
+  46   1          //使能定时器2用于检测时间
+  47   1          Time2_BMEF_Init();
+  48   1          //使能比较器
+  49   1          CMP_BMEF_Init();
+  50   1      
+  51   1      }
+  52          /*---------------------------------------------------------------------------*/
+  53          /* Name   : void CMP_BMEF_Init(void)
+C51 COMPILER V9.52.0.0   BEMFDETECT                                                        04/16/2020 10:07:50 PAGE 2   
+
+  54          /* Input  : NO
+  55          /* Output : NO
+  56          /* Description: BMF对应Time2的初始化
+  57          /*---------------------------------------------------------------------------*/
+  58          void CMP_BMEF_Init(void)
+  59          {
+  60   1        /*-------------------------------------------------------------------------------------------------
+  61   1        CMP Input Pin Mode
+  62   1        0: GPIO Mode, P1.4--CMP0_IN+, P1.6--CMP1_IN+, P2.1--CMP2_IN+
+  63   1                      P1.5--CMP0_IN-, P1.7--CMP1_IN-, P2.2--CMP2_IN-
+  64   1        1: BEMF Mode, 比较器正端连接到内部星型连接电阻U、V、W的BMEF采样点，
+  65   1                      比较器负端连接到内部星型连接电阻的虚拟中性点
+  66   1                      比较器负端与P1.5/P1.7/P2.2断开，这三个GPIO可做其他用途
+  67   1      -------------------------------------------------------------------------------------------------*/
+  68   1        SetBit(P1_AN, P14 | P16);                                   // CMP0、CMP1
+  69   1        SetBit(P2_AN, P21);                                         // CMP2
+  70   1      /*-------------------------------------------------------------------------------------------------
+  71   1         CMP0_MOD：
+  72   1         00：  无内置虚拟中心点电阻的BEMF模式
+  73   1         01：  内置虚拟中心点电阻的BEMF模式
+  74   1         10：  3差分比较器模式
+  75   1         11：  2比较器模式
+  76   1      -------------------------------------------------------------------------------------------------*/
+  77   1        SetReg(CMP_CR2, CMP0MOD0 | CMP0MOD1, CMP0MOD0);
+  78   1      /*-------------------------------------------------------------------------------------------------
+  79   1        比较器输出选择配置，与CMP0_MOD配合使用
+  80   1        CMP0_SEL[1:0]=00，比较器0工作在3比较器轮询模式，正端在CMP0P、CMP1P、CMP2P之间自�
+             -�轮流选择，
+  81   1                        负端固定接内置BEMF电阻的中心点，其输出结果分别送至CMP0_OUT、CMP1
+             -_OUT、CMP2_OUT
+  82   1        CMP0_SEL[1:0]=01，比较器0选择CMP0对应的端口组合，正端接CMP0P，负端接内置BEMF电�
+             -�的中心点，输出接CMP0_OUT
+  83   1        CMP0_SEL[1:0]=10，比较器0选择CMP1对应的端口组合，正端接CMP1P，负端接内置BEMF电�
+             -�的中心点，输出接CMP1_OUT
+  84   1        CMP0_SEL[1:0]=11，比较器0选择CMP2对应的端口组合，正端接CMP2P，负端接内置BEMF电�
+             -�的中心点，输出接CMP2_OUT
+  85   1      
+  86   1      -----------------------------------------------------------------------------*/
+  87   1        SetReg(CMP_CR2, CMP0SEL0 | CMP0SEL1, 0x00);
+  88   1      
+  89   1      /*-------------------------------------------------------------------------------------------------
+  90   1        比较器迟滞电压选择
+  91   1        000: 无迟滞   001: ±2.5mV   010: -5mV   011: +5mV
+  92   1        100: +-5mV   101: -10mV   110: +10mV   111: +-10mV
+  93   1      -------------------------------------------------------------------------------------------------*/
+  94   1        SetReg(CMP_CR1, CMP0HYS0 | CMP0HYS1 | CMP0HYS2, CMP0HYS2  );
+  95   1      /*-------------------------------------------------------------------------------------------------
+  96   1        CMP0的轮询时间设置
+  97   1      -------------------------------------------------------------------------------------------------*/
+  98   1        SetReg(CMP_CR2, CMP0CSEL1 | CMP0CSEL0, 0x00);
+  99   1      
+ 100   1      /*-------------------------------------------------------------------------------------------------
+ 101   1        比较器中断模式配置
+ 102   1        00: 不产生中断  01: 上升沿产生中断  10: 下降沿产生中断  11: 上升/下降沿产生中�
+             -��
+ 103   1      -------------------------------------------------------------------------------------------------*/
+ 104   1        SetReg(CMP_CR0, CMP2IM0 | CMP2IM1, CMP2IM0 | CMP2IM1);
+ 105   1        SetReg(CMP_CR0, CMP1IM0 | CMP1IM1, CMP1IM0 | CMP1IM1);
+ 106   1        SetReg(CMP_CR0, CMP0IM0 | CMP0IM1, CMP0IM0 | CMP0IM1);
+ 107   1        SetBit(CMP_CR2, CMP0EN);//开三个比较器
+ 108   1      }
+ 109          /*---------------------------------------------------------------------------*/
+C51 COMPILER V9.52.0.0   BEMFDETECT                                                        04/16/2020 10:07:50 PAGE 3   
+
+ 110          /* Name   : void Time2_RSD_Init(void)
+ 111          /* Input  : NO
+ 112          /* Output : NO
+ 113          /* Description: BMF对应Time2的初始化
+ 114          /*---------------------------------------------------------------------------*/
+ 115          void Time2_BMEF_Init(void)
+ 116          {
+ 117   1        /*-------------------------------------------------------------------------------------------------
+ 118   1        先停止计数，配置完寄存器后，最后启动计数
+ 119   1      -------------------------------------------------------------------------------------------------*/
+ 120   1        ClrBit(TIM2_CR1, T2EN);                                // 0，停止计数；1,使能计数
+ 121   1      
+ 122   1      /*-------------------------------------------------------------------------------------------------
+ 123   1        时钟分频设置(T2PSC)
+ 124   1        000:cpuclk(24MHz)     001:cpuclk/2^1(12MHz) 010:cpuclk/2^2(6MHz)  011:cpuclk/2^3(3MHz)
+ 125   1        100:cpuclk/2^4(1.5MHz)  101:cpuclk/2^5(750KHz)  110:cpuclk/2^6(375KHz)  111:cpuclk/2^7(187.5KHz)
+ 126   1      -------------------------------------------------------------------------------------------------*/
+ 127   1        SetReg(TIM2_CR0, T2PSC0 | T2PSC1 | T2PSC2, T2PSC0 | T2PSC1 | T2PSC2);
+ 128   1        /*-------------------------------------------------------------------------------------------------
+ 129   1        /模式选择
+ 130   1        T2MODE1，T2MODE0
+ 131   1        00--输入Timer模式；01--输出模式
+ 132   1        10--输入Count模式；11--QEP或者RSD模式
+ 133   1      -------------------------------------------------------------------------------------------------*/
+ 134   1        SetReg(TIM2_CR0, T2MOD0 | T2MOD1, T2MOD0);
+ 135   1        /*-------------------------------------------------------------------------------------------------
+ 136   1        清除中断标志位
+ 137   1        禁止PWM周期检测中断使能
+ 138   1      -------------------------------------------------------------------------------------------------*/
+ 139   1        ClrBit(TIM2_CR0, T2CES);                                   // 清零脉冲计数器不使能
+ 140   1        ClrBit(TIM2_CR1, T2IR | T2IF | T2IP);              // 清零中断标志位
+ 141   1      
+ 142   1      /*-------------------------------------------------------------------------------------------------
+ 143   1        配置周期值、比较值、计数值
+ 144   1        禁止PWM周期检测中断使能
+ 145   1        使能计数器上溢中断使能
+ 146   1      -------------------------------------------------------------------------------------------------*/
+ 147   1        TIM2__ARR = 60000;                                         // TIM2 Period = 0.32s
+ 148   1        TIM2__DR = TIM2__ARR;
+ 149   1        TIM2__CNTR = 0;
+ 150   1      /*-----------启动计数------------------------------------------------*/
+ 151   1        SetBit(TIM2_CR1, T2EN);                              //启动计数
+ 152   1      
+ 153   1      }
+ 154          /*---------------------------------------------------------------------------*/
+ 155          /* Name   : void GetBEMFStatus(void)
+ 156          /* Input  : NO
+ 157          /* Output : NO
+ 158          /* Description: 读反电动势状态
+ 159          /*---------------------------------------------------------------------------*/
+ 160          uint8 GetBEMFStatus(void)
+ 161          {
+ 162   1        uint8 BEMFStatus = 0;
+ 163   1      
+ 164   1        if(ReadBit(CMP_SR, CMP2OUT))
+ 165   1        {
+ 166   2          BEMFStatus += 4;
+ 167   2        }
+ 168   1      
+ 169   1        if(ReadBit(CMP_SR, CMP1OUT))
+ 170   1        {
+ 171   2          BEMFStatus += 2;
+C51 COMPILER V9.52.0.0   BEMFDETECT                                                        04/16/2020 10:07:50 PAGE 4   
+
+ 172   2        }
+ 173   1      
+ 174   1        if(ReadBit(CMP_SR, CMP0OUT))
+ 175   1        {
+ 176   2          BEMFStatus += 1;
+ 177   2        }
+ 178   1      
+ 179   1        return BEMFStatus;
+ 180   1      
+ 181   1      }
+ 182          
+ 183          /*-------------------------------------------------------------------------------------------------
+ 184            Function Name : uint8 CWCCWDetect(void)
+ 185            Description   : 功能函数，检测电机转向，根据相邻两个Hall状态顺序来判断电机转�
+             -��
+ 186            Input         : 无
+ 187            Output        : MC_FR--电机转向，取值为CW或CCW LastHallStatus
+ 188          -------------------------------------------------------------------------------------------------*/
+ 189          uint8 CWCCWDetect(uint8 HallStatus)
+ 190          {
+ 191   1        static uint8 MC_FR = 0;
+ 192   1        static uint8 MC_HallStatus = 0;
+ 193   1      
+ 194   1        if(MC_HallStatus == 0)//第一次进入中断
+ 195   1        {
+ 196   2          MC_HallStatus = HallStatus;
+ 197   2          MC_FR = CW;
+ 198   2          return MC_FR;
+ 199   2        }
+ 200   1      
+ 201   1        if(MC_HallStatus != HallStatus)
+ 202   1        {
+ 203   2          switch(MC_HallStatus)
+ 204   2          {
+ 205   3            case 1:
+ 206   3              if(HallStatus == 5)
+ 207   3              {
+ 208   4                MC_FR = CCW;
+ 209   4              }
+ 210   3              if(HallStatus == 3)
+ 211   3              {
+ 212   4                MC_FR = CW;
+ 213   4              }
+ 214   3              break;
+ 215   3            case 2:
+ 216   3              if(HallStatus == 3)
+ 217   3              {
+ 218   4                MC_FR = CCW;
+ 219   4              }
+ 220   3              if(HallStatus == 6)
+ 221   3              {
+ 222   4                MC_FR = CW;
+ 223   4              }
+ 224   3              break;
+ 225   3            case 3:
+ 226   3              if(HallStatus == 1)
+ 227   3              {
+ 228   4                MC_FR = CCW;
+ 229   4              }
+ 230   3              if(HallStatus == 2)
+ 231   3              {
+ 232   4                MC_FR = CW;
+C51 COMPILER V9.52.0.0   BEMFDETECT                                                        04/16/2020 10:07:50 PAGE 5   
+
+ 233   4              }
+ 234   3              break;
+ 235   3            case 4:
+ 236   3              if(HallStatus == 6)
+ 237   3              {
+ 238   4                MC_FR = CCW;
+ 239   4              }
+ 240   3              if(HallStatus == 5)
+ 241   3              {
+ 242   4                MC_FR = CW;
+ 243   4              }
+ 244   3              break;
+ 245   3            case 5:
+ 246   3              if(HallStatus == 4)
+ 247   3              {
+ 248   4                MC_FR = CCW;
+ 249   4              }
+ 250   3              if(HallStatus == 1)
+ 251   3              {
+ 252   4                MC_FR = CW;
+ 253   4              }
+ 254   3              break;
+ 255   3            case 6:
+ 256   3              if(HallStatus == 2)
+ 257   3              {
+ 258   4                MC_FR = CCW;
+ 259   4              }
+ 260   3              if(HallStatus == 4)
+ 261   3              {
+ 262   4                MC_FR = CW;
+ 263   4              }
+ 264   3              break;
+ 265   3            default:
+ 266   3              break;
+ 267   3          }
+ 268   2          MC_HallStatus = HallStatus;
+ 269   2        }
+ 270   1        return MC_FR;
+ 271   1      }
+ 272          
+ 273          /*-------------------------------------------------------------------------------------------------
+ 274            Function Name : void BEMFSpeedDetect(void)
+ 275            Description   : 检测速度的计时
+ 276            Input         : 无
+ 277            Output        : 无
+ 278          -------------------------------------------------------------------------------------------------*/
+ 279          void BEMFSpeedDetect(void)
+ 280          {
+ 281   1        if(BEMFDetect.BEMFSpeedInitStatus == 0)
+ 282   1        {
+ 283   2          BEMFDetect.BEMFSpeedInitStatus =1;
+ 284   2      
+ 285   2          BEMFDetect.PeriodTime = 0;
+ 286   2          BEMFDetect.MC_StepTime[0] = 0;
+ 287   2          BEMFDetect.MC_StepTime[1] = 0;
+ 288   2          BEMFDetect.MC_StepTime[2] = 0;
+ 289   2          BEMFDetect.MC_StepTime[3] = 0;
+ 290   2          BEMFDetect.MC_StepTime[4] = 0;
+ 291   2          BEMFDetect.MC_StepTime[5] = 0;
+ 292   2          BEMFDetect.BEMFStep =0;
+ 293   2          BEMFDetect.StepTime =0;
+ 294   2          BEMFDetect.FirstCycle =0;
+C51 COMPILER V9.52.0.0   BEMFDETECT                                                        04/16/2020 10:07:50 PAGE 6   
+
+ 295   2        }
+ 296   1        else
+ 297   1        {
+ 298   2          BEMFDetect.StepTime = TIM2__CNTR;
+ 299   2          TIM2__CNTR = 0;
+ 300   2      
+ 301   2          BEMFDetect.MC_StepTime[BEMFDetect.BEMFStep] = BEMFDetect.StepTime;
+ 302   2      
+ 303   2          BEMFDetect.PeriodTime = (BEMFDetect.MC_StepTime[0] + BEMFDetect.MC_StepTime[1] + BEMFDetect.MC_StepTime[
+             -2] +
+ 304   2                                  BEMFDetect.MC_StepTime[3] + BEMFDetect.MC_StepTime[4] + BEMFDetect.MC_StepTime[5])>>3;
+ 305   2      
+ 306   2          BEMFDetect.BEMFStep++;
+ 307   2      
+ 308   2          if(BEMFDetect.FirstCycle)//360度，第一圈是360计算一次速度，第二圈是60度计算一次速
+             -度
+ 309   2          {
+ 310   3            BEMFDetect.FlagSpeedCal = 1;
+ 311   3            BEMFDetect.BEMFSpeedBase = TempBEMFSpeedBase;
+ 312   3          }
+ 313   2          else//60度
+ 314   2          {
+ 315   3            BEMFDetect.FlagSpeedCal = 1;
+ 316   3            BEMFDetect.BEMFSpeedBase = TempBEMFSpeedBase1;
+ 317   3            BEMFDetect.PeriodTime = BEMFDetect.StepTime;
+ 318   3          }
+ 319   2      
+ 320   2          if(BEMFDetect.BEMFStep == 6)
+ 321   2          {
+ 322   3            BEMFDetect.FirstCycle = 1;
+ 323   3            BEMFDetect.BEMFStep = 0;
+ 324   3          }
+ 325   2        }
+ 326   1      }
+ 327          /*---------------------------------------------------------------------------*/
+ 328          /* Name   : void BEMFSpeedCal(void)
+ 329          /* Input  : NO
+ 330          /* Output : NO
+ 331          /* Description: 速度计算，得到的是Q格式的数据
+ 332          /*---------------------------------------------------------------------------*/
+ 333          void BEMFSpeedCal(void)
+ 334          {
+ 335   1        if(BEMFDetect.FlagSpeedCal)//此处注意XDATA和除数只能是16位的问题
+ 336   1        {
+ 337   2          BEMFDetect.BEMFSpeed  = MDU_DIV_XDATA_U32(&BEMFDetect.BEMFSpeedBase, &BEMFDetect.PeriodTime);   //得到�
+             -�是Q格式的速度,此处除法器与过调值不冲突
+ 338   2          BEMFDetect.FlagSpeedCal = 0;
+ 339   2        }
+ 340   1      }
+ 341          
+ 342          /*---------------------------------------------------------------------------*/
+ 343          /* Name   : void BEMFDetectFunc(void)
+ 344          /* Input  : NO
+ 345          /* Output : NO
+ 346          /* Description: BEMF检测，判断方向，速度，以及顺风切闭环
+ 347          /*---------------------------------------------------------------------------*/
+ 348          void BEMFDetectFunc(void)
+ 349          {
+ 350   1        if(ReadBit(CMP_SR, CMP0IF)||ReadBit(CMP_SR, CMP1IF)||ReadBit(CMP_SR, CMP2IF))//当检测到比较器中�
+             -�时
+ 351   1        {
+ 352   2      
+C51 COMPILER V9.52.0.0   BEMFDETECT                                                        04/16/2020 10:07:50 PAGE 7   
+
+ 353   2          //检测当前BEMF状态
+ 354   2          BEMFDetect.BEMFStatus = GetBEMFStatus();
+ 355   2      
+ 356   2          //根据BEMF状态判断FR状态
+ 357   2          BEMFDetect.FRStatus = CWCCWDetect(BEMFDetect.BEMFStatus);
+ 358   2      
+ 359   2          //速度检测
+ 360   2          BEMFSpeedDetect();
+ 361   2      
+ 362   2          //速度计算
+ 363   2          BEMFSpeedCal();
+ 364   2      
+ 365   2          //强制启动标志使能时
+ 366   2          if(BEMFDetect.BEMFStartStatus)
+ 367   2          {
+ 368   3            //CW时U相BEMF上升沿启动，CCW时V相BEMF上升沿启动
+ 369   3            if(((mcFRState.TargetFR == CW)&&(BEMFDetect.BEMFStatus == 5))||((mcFRState.TargetFR == CCW)&&(BEMFDetec
+             -t.BEMFStatus == 3)))
+ 370   3            {
+ 371   4              //执行直接闭环启动程序
+ 372   4              BEMFFOCCloseLoopStart();
+ 373   4              ClrBit(CMP_CR0, CMP2IM1 | CMP2IM0 | CMP1IM1 | CMP1IM0 | CMP0IM1 | CMP0IM0);
+ 374   4              ClrBit(CMP_CR2, CMP0EN);
+ 375   4      
+ 376   4              BEMFDetect.BEMFStartStatus =0;
+ 377   4            }
+ 378   3          }
+ 379   2          ClrBit(CMP_SR, CMP0IF | CMP1IF | CMP2IF);
+ 380   2        }
+ 381   1      }
+ 382          
+ 383          /*---------------------------------------------------------------------------*/
+ 384          /* Name   : void BEMFDealwith(void)
+ 385          /* Input  : NO
+ 386          /* Output : NO
+ 387          /* Description: BEMF处理方式
+ 388          /*---------------------------------------------------------------------------*/
+ 389          void BEMFDealwith(void)
+ 390          {
+ 391   1          if((BEMFDetect.BEMFTimeCount>=0)&&(BEMFDetect.BEMFTimeCount<(BEMF_START_DETECT_TIME-BEMF_START_DELAY_TIM
+             -E)))
+ 392   1          {
+ 393   2              if(BEMFDetect.FRStatus == mcFRState.TargetFR)
+ 394   2              {
+ 395   3                //超过设定转速时直接启动
+ 396   3                if((BEMFDetect.BEMFSpeed > BEMFMotorStartSpeed)&&(BEMFDetect.BEMFSpeed < BEMFMotorStartSpeedHigh
+             -))
+ 397   3                {
+ 398   4                  BEMFDetect.BEMFStartStatus = 1;
+ 399   4      
+ 400   4                }
+ 401   3              }
+ 402   2              else//反转，刹车
+ 403   2              {
+ 404   3                  McStaSet.SetFlag.TailWindSetFlag=0;
+ 405   3      
+ 406   3                  MOE = 0;
+ 407   3                  DRV_DR = DRV_ARR+1;
+ 408   3                  DRV_CMR &= 0xFFC0;
+ 409   3                  DRV_CMR |= 0x015;                         // 三相下桥臂通，刹车
+ 410   3                  ClrBit(DRV_CR,OCS);//OCS = 0, DRV_COMR;OCS = 1, FOC/SVPWM/SPWM
+ 411   3      //            SetBit(DRV_CR, DRVEN);
+C51 COMPILER V9.52.0.0   BEMFDETECT                                                        04/16/2020 10:07:50 PAGE 8   
+
+ 412   3                  MOE = 1;
+ 413   3      
+ 414   3                  ClrBit(CMP_CR0, CMP2IM1 | CMP2IM0 | CMP1IM1 | CMP1IM0 | CMP0IM1 | CMP0IM0);
+ 415   3                  ClrBit(CMP_CR2, CMP0EN);
+ 416   3      
+ 417   3                  if(BEMFDetect.BEMFSpeed > _Q15(300.0/MOTOR_SPEED_BASE))
+ 418   3                  {
+ 419   4                    mcFocCtrl.State_Count=2000;
+ 420   4                    BEMFDetect.BEMFCCWFlag=1;
+ 421   4                  }
+ 422   3                  else
+ 423   3                  {
+ 424   4                    mcFocCtrl.State_Count=1000;
+ 425   4                    if(BEMFDetect.BEMFCCWFlag==0)
+ 426   4                    BEMFDetect.BEMFCCWFlag=2;
+ 427   4                  }
+ 428   3      
+ 429   3              }
+ 430   2          }
+ 431   1          if((BEMFDetect.BEMFTimeCount == 0)&&(BEMFDetect.BEMFSpeed < BEMFMotorStartSpeed))//静止或低速
+ 432   1          {
+ 433   2            ClrBit(CMP_CR0, CMP2IM1 | CMP2IM0 | CMP1IM1 | CMP1IM0 | CMP0IM1 | CMP0IM0);
+ 434   2            ClrBit(CMP_CR2, CMP0EN);
+ 435   2            mcState = mcPosiCheck;
+ 436   2            McStaSet.SetFlag.PosiCheckSetFlag = 0;
+ 437   2            mcFocCtrl.mcPosCheckAngle         = 0xffff;     // 角度赋初值
+ 438   2          }
+ 439   1      }
+ 440          /*---------------------------------------------------------------------------*/
+ 441          /* Name   : void BEMFFOCCloseLoopStart(void)
+ 442          /* Input  : NO
+ 443          /* Output : NO
+ 444          /* Description: 闭环启动
+ 445          /*---------------------------------------------------------------------------*/
+ 446          void BEMFFOCCloseLoopStart(void)
+ 447          {
+ 448   1            /*FOC初始化*/
+ 449   1          FOC_Init();
+ 450   1      
+ 451   1          /*启动电流、KP、KI*/
+ 452   1          FOC_IDREF = ID_Start_CURRENT;                         // D轴启动电流
+ 453   1          mcFocCtrl.mcIqref= IQ_Start_CURRENT;                  // Q轴启动电流
+ 454   1          FOC_IQREF = mcFocCtrl.mcIqref;                        // Q轴启动电流
+ 455   1      
+ 456   1          FOC_DQKP = DQKP;
+ 457   1          FOC_DQKI = DQKI;
+ 458   1      
+ 459   1          FOC_EFREQACC  = Motor_Omega_Ramp_ACC;
+ 460   1          FOC_EFREQMIN  = Motor_Omega_Ramp_Min;
+ 461   1          FOC_EFREQHOLD = Motor_Omega_Ramp_End;
+ 462   1      
+ 463   1          SetBit(FOC_CR1,EFAE);                             // 估算器强制输出
+ 464   1          ClrBit(FOC_CR1,RFAE);                             // 禁止强拉
+ 465   1          SetBit(FOC_CR1,ANGM);                             // 估算模式
+ 466   1      
+ 467   1          FOC__EOME=BEMFDetect.BEMFSpeed;
+ 468   1      //    FOC__UQ=(QOUTMAX>>1);
+ 469   1      
+ 470   1          #if (EstimateAlgorithm == SMO)
+ 471   1          {
+ 472   2            //根据不同转速确启动的ATO_BW值
+ 473   2            if(BEMFDetect.BEMFSpeed >_Q15(360.0/MOTOR_SPEED_BASE))
+C51 COMPILER V9.52.0.0   BEMFDETECT                                                        04/16/2020 10:07:50 PAGE 9   
+
+ 474   2            {
+ 475   3              FOC_EKP                       = OBSW_KP_GAIN_RUN4;
+ 476   3              FOC_EKI                       = OBSW_KI_GAIN_RUN4;
+ 477   3              mcFocCtrl.mcIqref             = IQ_RUN_CURRENT;
+ 478   3              mcFocCtrl.State_Count         = 100;
+ 479   3            }
+ 480   2            else if(BEMFDetect.BEMFSpeed >_Q15(160.0/MOTOR_SPEED_BASE))
+ 481   2            {
+ 482   3      
+ 483   3              FOC_EKP                       = OBSW_KP_GAIN_RUN3;
+ 484   3              FOC_EKI                       = OBSW_KI_GAIN_RUN3;
+ 485   3              mcFocCtrl.mcIqref             = IQ_RUN_CURRENT;
+ 486   3              mcFocCtrl.State_Count         = 1000;
+ 487   3            }
+ 488   2            else
+ 489   2            {
+ 490   3              FOC_EKP                       = OBSW_KP_GAIN_RUN1;
+ 491   3              FOC_EKI                       = OBSW_KI_GAIN_RUN1;
+ 492   3              mcFocCtrl.mcIqref             = IQ_Start_CURRENT;
+ 493   3              mcFocCtrl.State_Count         = 2000;
+ 494   3            }
+ 495   2          }
+ 496   1          #elif (EstimateAlgorithm == PLL)
+                  {
+                     FOC_EKP                        = OBSW_KP_GAIN_RUN4;
+                     FOC_EKI                        = OBSW_KI_GAIN_RUN4;
+                     mcFocCtrl.mcIqref              = IQ_RUN_CURRENT;
+                  }
+                  #endif //end  EstimateAlgorithm
+ 503   1          FOC_OMEKLPF                     = SPEED_KLPF;
+ 504   1          mcState                         = mcRun;
+ 505   1          mcFocCtrl.CtrlMode              = 0;
+ 506   1      
+ 507   1          /*使能输出*/
+ 508   1          DRV_CMR |= 0x3F;                         // U、V、W相输出
+ 509   1          MOE = 1;
+ 510   1          EA=1;
+ 511   1      
+ 512   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1301    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     34    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

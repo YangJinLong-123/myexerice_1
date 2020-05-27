@@ -1,0 +1,90 @@
+C51 COMPILER V9.52.0.0   NOCAPACITORCONTROL                                                06/13/2018 19:48:52 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE NOCAPACITORCONTROL
+OBJECT MODULE PLACED IN .\Output\NoCapacitorControl.obj
+COMPILER INVOKED BY: E:\Program Files\Keil C51\C51\BIN\C51.EXE ..\User\Source\Function\NoCapacitorControl.c LARGE OMF2 W
+                    -ARNINGLEVEL(0) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\NoCapacito
+                    -rControl.lst) TABS(2) OBJECT(.\Output\NoCapacitorControl.obj)
+
+line level    source
+
+   1          /**************************** (C) COPYRIGHT 2017 Fortiortech shenzhen *****************************
+   2          * File Name          : FocControl.c
+   3          * Author             : Vina Peng,Fortiortech  Appliction Team
+   4          * Version            : V1.0
+   5          * Date               : 2017-12-26
+   6          * Description        : This file contains all the foc control framework used for Motor Control.
+   7          ***************************************************************************************************
+   8          * All Rights Reserved
+   9          **************************************************************************************************/
+  10          
+  11          /* Includes -------------------------------------------------------------------------------------*/
+  12          #include <FU68xx_2.h>
+  13          #include <Myproject.h>
+  14          
+  15          /* Private variables ----------------------------------------------------------------------------*/
+  16          MCQPOWER      PowerControl;
+  17          OUTLOOP       SpeedPICtrl;
+  18          OUTLOOP       QAxisPOWPI;
+  19          
+  20          /*---------------------------------------------------------------------------*/
+  21          /* Name     :   void OutLoopParameterClear(void)
+  22          /* Input    :   NO
+  23          /* Output   :   NO
+  24          /* Description: 
+  25          /*---------------------------------------------------------------------------*/
+  26          void OutLoopParameterClear(void)
+  27          {
+  28   1        memset(&SpeedPICtrl,0, sizeof(OUTLOOP));                                // SpeedControl«Â¡„
+  29   1        memset(&QAxisPOWPI,0, sizeof(OUTLOOP));                                 // QAxisPower«Â¡„
+  30   1        
+  31   1        SpeedPICtrl.ExtKP = SKP;
+  32   1        SpeedPICtrl.ExtKI = SKI;
+  33   1      
+  34   1        QAxisPOWPI.ExtKP = SKP;
+  35   1        QAxisPOWPI.ExtKI = SKI;
+  36   1        
+  37   1        PI_KP = SpeedPICtrl.ExtKP;
+  38   1        PI_KI = SpeedPICtrl.ExtKI;
+  39   1      }
+  40          
+  41          /*---------------------------------------------------------------------------*/
+  42          /* Name     :   void Qaxis_PowerContorl(void)
+  43          /* Input    :   NO
+  44          /* Output   :   NO
+  45          /* Description: 
+  46          /*---------------------------------------------------------------------------*/
+  47          void Qaxis_PowerContorl(void)
+  48          {
+  49   1        SpeedPICtrl.ExtRef = mcSpeedRamp.ActualValue;
+  50   1        SpeedPICtrl.ExtFed = mcFocCtrl.SpeedFlt;
+  51   1        HW_TWO_PI(&SpeedPICtrl);
+  52   1      //  FOC_IQREF = SpeedPICtrl.ExtOut;
+  53   1        
+C51 COMPILER V9.52.0.0   NOCAPACITORCONTROL                                                06/13/2018 19:48:52 PAGE 2   
+
+  54   1        MDU_MUL_XDATA_U16(SpeedPICtrl.ExtOut, mcFocCtrl.mcDcbusFlt, &QAxisPOWPI.ExtRef);
+  55   1        QAxisPOWPI.ExtFed = mcFocCtrl.Powerlpf;
+  56   1        HW_TWO_PI(&QAxisPOWPI);
+  57   1        FOC_IQREF = QAxisPOWPI.ExtOut;
+  58   1      }
+  59          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    181    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     42    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

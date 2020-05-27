@@ -1,0 +1,77 @@
+C51 COMPILER V9.52.0.0   PWMSCAN                                                           04/16/2020 10:07:49 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE PWMSCAN
+OBJECT MODULE PLACED IN .\Output\PWMScan.obj
+COMPILER INVOKED BY: D:\Keil4\C51\BIN\C51.EXE ..\User\Source\Application\PWMScan.c LARGE OMF2 WARNINGLEVEL(0) OPTIMIZE(5
+                    -,SPEED) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\PWMScan.lst) TABS
+                    -(2) OBJECT(.\Output\PWMScan.obj)
+
+line level    source
+
+   1          /**************************** (C) COPYRIGHT 2017 Fortiortech shenzhen *****************************
+   2          * File Name          : PWMScan.c
+   3          * Author             : Fortiortech Appliction Team
+   4          * Version            : V1.0
+   5          * Date               : 2017-12-27
+   6          * Description        : This file contains main function used for Motor Control.
+   7          ***************************************************************************************************
+   8          * All Rights Reserved
+   9          **************************************************************************************************/
+  10          
+  11          
+  12          /* Includes -------------------------------------------------------------------------------------*/
+  13          #include <FU68xx_2.h>
+  14          #include <Myproject.h>
+  15          
+  16          
+  17          /* Private typedef ------------------------------------------------------------------------------*/
+  18          /* Private define -------------------------------------------------------------------------------*/
+  19          /* Private macro --------------------------------------------------------------------------------*/
+  20          /* Private variables ----------------------------------------------------------------------------*/
+  21          PWMFREQINPUTTRPE xdata mcPWMFreqInputCtrl;
+  22          
+  23          /* Private function prototypes ------------------------------------------------------------------*/
+  24          /* Private functions ----------------------------------------------------------------------------*/
+  25          
+  26          /*-------------------------------------------------------------------------------------------------
+  27            Function Name : void PWMIN_Init(void)
+  28            Description   : PWM检测参数初始化
+  29            Input         : 无
+  30            Output      : 无
+  31          -------------------------------------------------------------------------------------------------*/
+  32          //void PWMIN_Init(void)
+  33          //{
+  34          //  memset(&mcPWMFreqInputCtrl,0, sizeof(PWMFREQINPUTTRPE));                      // 清零mcPWMFreqInputCtrl
+  35          //}
+  36          
+  37          /*-------------------------------------------------------------------------------------------------
+  38            Function Name : void PWMScan(void)
+  39            Description   : PWM扫描
+  40            Input         : 无
+  41            Output      : 无
+  42          -------------------------------------------------------------------------------------------------*/
+  43          void PWMScan(void)
+  44          {
+  45   1        int16 TempFreq1 = 0;
+  46   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =      8    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     14       2
+   PDATA SIZE       =   ----    ----
+C51 COMPILER V9.52.0.0   PWMSCAN                                                           04/16/2020 10:07:49 PAGE 2   
+
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

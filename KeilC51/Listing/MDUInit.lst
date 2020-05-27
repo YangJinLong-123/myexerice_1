@@ -1,0 +1,322 @@
+C51 COMPILER V9.52.0.0   MDUINIT                                                           04/16/2020 10:07:52 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE MDUINIT
+OBJECT MODULE PLACED IN .\Output\MDUInit.obj
+COMPILER INVOKED BY: D:\Keil4\C51\BIN\C51.EXE ..\User\Source\Hardware\MDUInit.c LARGE OMF2 WARNINGLEVEL(0) OPTIMIZE(5,SP
+                    -EED) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\MDUInit.lst) TABS(2)
+                    - OBJECT(.\Output\MDUInit.obj)
+
+line level    source
+
+   1          /**************************** (C) COPYRIGHT 2017 Fortiortech shenzhen *****************************
+   2          * File Name          : AddFunction.c
+   3          * Author             : Fortiortech  Appliction Team
+   4          * Version            : V1.0
+   5          * Date               : 10-Apr-2017
+   6          * Description        : This file contains MDU initial function used for Motor Control.
+   7          ***************************************************************************************************
+   8          * All Rights Reserved
+   9          **************************************************************************************************/
+  10          
+  11          
+  12          /* Includes -------------------------------------------------------------------------------------*/
+  13          #include <FU68xx_2.h>
+  14          #include <Myproject.h>
+  15          
+  16          /*-------------------------------------------------------------------------------------------------
+  17            Function Name : uint32 MDU_DIV_XDATA_U32(uint8 xdata *TData0, uint8 xdata *TData1)
+  18            Description   : 32位无符号除法，返回32位无符号值，运行时间9.3us，函数在调用过�
+             -�中如果
+  19                            被中断打断则会重复调用
+  20            Input         : TData0-被除数(32位)，TData1-除数(16位)，商是32位的，应用于数据类型�
+             -�XDATA
+  21            Output        : RData32-32位商
+  22          -------------------------------------------------------------------------------------------------*/
+  23          uint32 MDU_DIV_XDATA_U32(uint8 xdata *TData0, uint8 xdata *TData1)
+  24          {
+  25   1        uint32 RData32;
+  26   1      
+  27   1        uint16 *PData16;
+  28   1      
+  29   1        MDU_DA3 = *TData0;
+  30   1        MDU_DA2 = *(TData0+1);
+  31   1        MDU_DA1 = *(TData0+2);
+  32   1        MDU_DA0 = *(TData0+3);
+  33   1      
+  34   1        MDU_DB1 = *(TData1+0);
+  35   1        MDU_DB0 = *(TData1+1);
+  36   1      
+  37   1        SetBit(MDU_CR, DIVSTA);
+  38   1        while(!ReadBit(MDU_CR, DIVDONE));                      // 等待MDU计算完成
+  39   1      
+  40   1        PData16 = &RData32;
+  41   1        *PData16 = MDU_DA23;
+  42   1        PData16 += 1;
+  43   1        *PData16 = MDU_DA01;
+  44   1      
+  45   1        return RData32;
+  46   1      
+  47   1      }
+  48          /*-------------------------------------------------------------------------------------------------
+  49            Function Name : uint16 MDU_DIV_XDATA_U16(uint8 xdata *TData0, uint8 xdata *TData1)
+  50            Description   : 16位无符号除法，返回16位无符号值，运行时间5.6us，函数在调用过�
+             -�中如果
+C51 COMPILER V9.52.0.0   MDUINIT                                                           04/16/2020 10:07:52 PAGE 2   
+
+  51                            被中断打断则会重复调用
+  52            Input         : TData0-被除数(16位)，TData1-除数(16位)，商是16位的，应用于数据类型�
+             -�XDATA
+  53            Output        : RData16-16位商
+  54          -------------------------------------------------------------------------------------------------*/
+  55          
+  56          uint16 MDU_DIV_XDATA_U16(uint8 xdata *TData0, uint8 xdata *TData1)
+  57          {
+  58   1        uint16 RData16;
+  59   1        uint16 *PData16;
+  60   1      
+  61   1        MDU_DA3 = 0x00;
+  62   1        MDU_DA2 = 0x00;
+  63   1        MDU_DA1 = *(TData0+0);
+  64   1        MDU_DA0 = *(TData0+1);
+  65   1      
+  66   1        MDU_DB1 = *(TData1+0);
+  67   1        MDU_DB0 = *(TData1+1);
+  68   1      
+  69   1        SetBit(MDU_CR, DIVSTA);
+  70   1        while(!ReadBit(MDU_CR, DIVDONE));                      // 等待MDU计算完成
+  71   1      
+  72   1        PData16 = &RData16;
+  73   1        *PData16 = MDU_DA01;
+  74   1      
+  75   1        return MDU_DA01;
+  76   1      }
+  77          /*-------------------------------------------------------------------------------------------------
+  78            Function Name : uint32 MDU_DIV_IDATA_U32(uint8 xdata *TData0, uint8 xdata *TData1)
+  79            Description   : 32位无符号除法，返回32位无符号值，运行时间8us，函数在调用过程�
+             -��如果
+  80                            被中断打断则会重复调用
+  81            Input         : TData0-被除数(32位)，TData1-除数(16位)，商是32位的，应用于数据类型�
+             -�IDATA
+  82            Output        : RData32-32位商
+  83          -------------------------------------------------------------------------------------------------*/
+  84          uint32 MDU_DIV_IDATA_U32(uint8 idata *TData0, uint8 idata *TData1)//
+  85          {
+  86   1        uint32 RData32;
+  87   1        uint16 *PData16;
+  88   1      
+  89   1        MDU_DA3 = *TData0;
+  90   1        MDU_DA2 = *(TData0+1);
+  91   1        MDU_DA1 = *(TData0+2);
+  92   1        MDU_DA0 = *(TData0+3);
+  93   1      
+  94   1        MDU_DB1 = *(TData1+0);
+  95   1        MDU_DB0 = *(TData1+1);
+  96   1      
+  97   1        SetBit(MDU_CR, DIVSTA);
+  98   1        while(!ReadBit(MDU_CR, DIVDONE));                      // 等待MDU计算完成
+  99   1      
+ 100   1      
+ 101   1        PData16 = &RData32;
+ 102   1        *PData16 = MDU_DA23;
+ 103   1        PData16 += 1;
+ 104   1        *PData16 = MDU_DA01;
+ 105   1      
+ 106   1        return RData32;
+ 107   1      
+ 108   1      }
+ 109          
+C51 COMPILER V9.52.0.0   MDUINIT                                                           04/16/2020 10:07:52 PAGE 3   
+
+ 110          /*-------------------------------------------------------------------------------------------------
+ 111            Function Name : uint16 MDU_DIV_XDATA_U16(uint8 xdata *TData0, uint8 xdata *TData1)
+ 112            Description   : 16位无符号除法，返回16位无符号值，运行时间4.6us，函数在调用过�
+             -�中如果
+ 113                            被中断打断则会重复调用
+ 114            Input         : TData0-被除数(16位)，TData1-除数(16位)，商是16位的，应用于数据类型�
+             -�IDATA
+ 115            Output        : RData16-16位商
+ 116          -------------------------------------------------------------------------------------------------*/
+ 117          
+ 118          uint16 MDU_DIV_IDATA_U16(uint8 idata *TData0, uint8 idata *TData1)
+ 119          {
+ 120   1        uint16 RData16;
+ 121   1        uint16 *PData16;
+ 122   1      
+ 123   1        MDU_DA3 = 0x00;
+ 124   1        MDU_DA2 = 0x00;
+ 125   1        MDU_DA1 = *(TData0+0);
+ 126   1        MDU_DA0 = *(TData0+1);
+ 127   1      
+ 128   1        MDU_DB1 = *(TData1+0);
+ 129   1        MDU_DB0 = *(TData1+1);
+ 130   1      
+ 131   1        SetBit(MDU_CR, DIVSTA);
+ 132   1        while(!ReadBit(MDU_CR, DIVDONE));                      // 等待MDU计算完成
+ 133   1      
+ 134   1        PData16 = &RData16;
+ 135   1        *PData16 = MDU_DA01;
+ 136   1      
+ 137   1        return MDU_DA01;
+ 138   1      
+ 139   1      }
+ 140          
+ 141          /*---------------------------------------------------------------------------*/
+ 142          /* Name   : void MDU_16MUL16_INT(uint8 ALIGN, uint8 SIGN)
+ 143          /* Input  : NO
+ 144          /* Output : NO
+ 145          /* Description: Inital MDU parameter
+ 146          /*---------------------------------------------------------------------------*/
+ 147          void MDU_16MUL16_INT(uint8 ALIGN, uint8 SIGN)
+ 148          {
+ 149   1        if(ALIGN == 0)
+ 150   1        {
+ 151   2          MDU_CR &= ~(1<<ALIGN1);
+ 152   2          MDU_CR &= ~(1<<ALIGN0);       /*00:乘法结果右移0位*/
+ 153   2        }
+ 154   1        else if(ALIGN == 8)
+ 155   1        {
+ 156   2          MDU_CR &= ~(1<<ALIGN1);
+ 157   2          MDU_CR |= (1<<ALIGN0);          /*01:乘法结果右移8位*/
+ 158   2        }
+ 159   1        else if(ALIGN == 12)
+ 160   1        {
+ 161   2          MDU_CR |= (1<<ALIGN1);
+ 162   2          MDU_CR &= ~(1<<ALIGN0);         /*10:乘法结果右移12位*/
+ 163   2        }
+ 164   1        else if(ALIGN == 15)
+ 165   1        {
+ 166   2          MDU_CR |= (1<<ALIGN1);
+ 167   2          MDU_CR |= (1<<ALIGN0);          /*11:乘法结果右移15位*/
+ 168   2        }
+ 169   1        else ;
+C51 COMPILER V9.52.0.0   MDUINIT                                                           04/16/2020 10:07:52 PAGE 4   
+
+ 170   1      
+ 171   1        if(SIGN == 0)
+ 172   1        {
+ 173   2          MDU_CR &= ~(1<<MDSN);         /*选择无符号乘法*/
+ 174   2        }
+ 175   1        else if(SIGN == 1)
+ 176   1        {
+ 177   2          MDU_CR |= (1<<MDSN);            /*选择有符号乘法*/
+ 178   2        }
+ 179   1        else ;
+ 180   1      }
+ 181          /*-------------------------------------------------------------------------------------------------
+ 182            Function Name : void MDU_MUL_U32(uint16 TData0, uint16 TData1, uint16 xdata *Result32_t)
+ 183            Description   : 16位无符号乘法，返回32位无符号值，运行时间3.0-3.8us，函数在调用�
+             -��程中如果
+ 184                            被中断打断则会重复调用
+ 185            Input         : TData0-乘数0; TData1-乘数1; Result32_t-32bi乘积变量指针
+ 186          -------------------------------------------------------------------------------------------------*/
+ 187          void MDU_MUL_XDATA_U32(uint16 TData0, uint16 TData1, uint16 xdata *Result32_t)
+ 188          {
+ 189   1      
+ 190   1        ClrBit(MDU_CR, ALIGN1);
+ 191   1        ClrBit(MDU_CR, ALIGN0);                            // 00:乘法结果右移0位
+ 192   1        SetBit(MDU_CR, MDSN);                              // 0-无符号乘法，1-有符号乘法
+ 193   1      
+ 194   1        MDU_MA = TData0;
+ 195   1        MDU_MB = TData1;                                         // 写被乘数和乘数
+ 196   1      
+ 197   1        *Result32_t = MDU_MA;
+ 198   1        *(Result32_t+1) = MDU_MB;
+ 199   1      }
+ 200          /*-------------------------------------------------------------------------------------------------
+ 201            Function Name : void MDU_MUL_XDATA_RIGHT_U16(uint16 TData0, uint16 TData1, uint16 xdata *Result16_t)
+ 202            Description   : 16位无符号乘法，返回32位无符号值，运行时间3.0-3.8us，函数在调用�
+             -��程中如果
+ 203                            被中断打断则会重复调用,右移15位
+ 204            Input         : TData0-乘数0; TData1-乘数1; Result32_t-32bit乘积变量指针，ALIGN右移的位数
+ 205          -------------------------------------------------------------------------------------------------*/
+ 206          void MDU_MUL_XDATA_RIGHT_U32(uint16 TData0, uint16 TData1,uint8 ALIGN, uint16 xdata *Result32_t)
+ 207          { 
+ 208   1        if(ALIGN == 8)
+ 209   1        {
+ 210   2         SetBit(MDU_CR, ALIGN0);
+ 211   2         ClrBit(MDU_CR, ALIGN1);                          // 01:乘法结果右移8位
+ 212   2        }
+ 213   1        else if(ALIGN == 12)
+ 214   1        {
+ 215   2         SetBit(MDU_CR, ALIGN1);                          // 10:乘法结果右移12位
+ 216   2         ClrBit(MDU_CR, ALIGN0);
+ 217   2        }
+ 218   1        else if(ALIGN == 15)
+ 219   1        {
+ 220   2         SetBit(MDU_CR, ALIGN1|ALIGN0);                    // 11:乘法结果右移15位
+ 221   2        }
+ 222   1        else
+ 223   1        {
+ 224   2         ClrBit(MDU_CR, ALIGN1|ALIGN0);                    // 00:乘法结果不右移
+ 225   2        } 
+ 226   1      
+ 227   1        ClrBit(MDU_CR, MDSN);                              // 0-无符号乘法，1-有符号乘法
+ 228   1      
+ 229   1        MDU_MA = TData0;
+C51 COMPILER V9.52.0.0   MDUINIT                                                           04/16/2020 10:07:52 PAGE 5   
+
+ 230   1        MDU_MB = TData1;                                   // 写被乘数和乘数
+ 231   1      
+ 232   1        *(Result32_t) = MDU_MA;
+ 233   1        *(Result32_t+1) = MDU_MB;
+ 234   1      }
+ 235          /*-------------------------------------------------------------------------------------------------
+ 236            Function Name : void MDU_MUL_U16(uint16 TData0, uint16 TData1, uint16 xdata *Result16_t)
+ 237            Description   : 16位无符号乘法，返回16位无符号值，运行时间3.0-3.8us，函数在调用�
+             -��程中如果
+ 238                            被中断打断则会重复调用
+ 239            Input         : TData0-乘数0; TData1-乘数1; Result16_t-16bi乘积变量指针
+ 240          -------------------------------------------------------------------------------------------------*/
+ 241          void MDU_MUL_XDATA_U16(uint16 TData0, uint16 TData1, uint16 xdata *Result16_t)
+ 242          {
+ 243   1      
+ 244   1      //  ClrBit(MDU_CR, ALIGN1|ALIGN0);                     // 00:乘法结果右移0位
+ 245   1        SetBit(MDU_CR, ALIGN1|ALIGN0);                     // 11:乘法结果右移15位
+ 246   1      //  SetBit(MDU_CR, ALIGN1);                                 // 10:乘法结果右移12位
+ 247   1      //  ClrBit(MDU_CR, ALIGN0);
+ 248   1        ClrBit(MDU_CR, MDSN);                                   // 0-无符号乘法，1-有符号乘法
+ 249   1      
+ 250   1        MDU_MA = TData0;
+ 251   1        MDU_MB = TData1;                                        // 写被乘数和乘数
+ 252   1      
+ 253   1        *(Result16_t) = MDU_MB;
+ 254   1      }
+ 255          
+ 256          /*-------------------------------------------------------------------------------------------------
+ 257            Function Name : void MDU_MUL_IDATA_U32(uint16 TData0, uint16 TData1, uint16 idata *Result32_t)
+ 258            Description   : 16位无符号乘法，返回32位无符号值，运行时间3.0-3.8us，函数在调用�
+             -��程中如果
+ 259                            被中断打断则会重复调用
+ 260            Input         : TData0-乘数0; TData1-乘数1; Result32_t-32bi乘积变量指针
+ 261          -------------------------------------------------------------------------------------------------*/
+ 262          void MDU_MUL_IDATA_U32(uint16 TData0, uint16 TData1, uint16 idata *Result32_t)
+ 263          {
+ 264   1        
+ 265   1        ClrBit(MDU_CR, ALIGN1|ALIGN0);                           // 00:乘法结果右移0位
+ 266   1        SetBit(MDU_CR, MDSN);                                    // 0-无符号乘法，1-有符号乘法
+ 267   1      
+ 268   1        MDU_MA = TData0;
+ 269   1        MDU_MB = TData1;                                         // 写被乘数和乘数
+ 270   1      
+ 271   1        *Result32_t = MDU_MA;
+ 272   1        *(Result32_t+1) = MDU_MB;
+ 273   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    606    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----      19
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

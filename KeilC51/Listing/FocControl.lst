@@ -1,0 +1,228 @@
+C51 COMPILER V9.52.0.0   FOCCONTROL                                                        04/16/2020 10:07:49 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE FOCCONTROL
+OBJECT MODULE PLACED IN .\Output\FocControl.obj
+COMPILER INVOKED BY: D:\Keil4\C51\BIN\C51.EXE ..\User\Source\Function\FocControl.c LARGE OMF2 WARNINGLEVEL(0) OPTIMIZE(5
+                    -,SPEED) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\FocControl.lst) T
+                    -ABS(2) OBJECT(.\Output\FocControl.obj)
+
+line level    source
+
+   1          /**************************** (C) COPYRIGHT 2017 Fortiortech shenzhen *****************************
+   2          * File Name          : FocControl.c
+   3          * Author             : Fortiortech  Appliction Team
+   4          * Version            : V1.0
+   5          * Date               : 2017-12-26
+   6          * Description        : This file contains all the foc control framework used for Motor Control.
+   7          ***************************************************************************************************
+   8          * All Rights Reserved
+   9          **************************************************************************************************/
+  10          
+  11          
+  12          /* Includes -------------------------------------------------------------------------------------*/
+  13          // #include <FocControl.h>
+  14          #include <FU68xx_2.h>
+  15          #include <Myproject.h>
+  16          
+  17          /* Private variables ----------------------------------------------------------------------------*/
+  18          MotStaType mcState;
+  19          //MotStaTim  MotorStateTime;
+  20          MotStaM    McStaSet;
+  21          //TailWindSet xdata  mcTailwind;
+  22          
+  23          uint16 TimeCnt;
+  24          
+  25          //uint16 EFREQACC;
+  26          //uint16 EFREQMIN;
+  27          //uint16 EFREQHOLD;
+  28          
+  29          StartTimeCnt Time;
+  30          
+  31          /*---------------------------------------------------------------------------*/
+  32          /* Name     :   void MC_Control(void)
+  33          /* Input    :   NO
+  34          /* Output   :   NO
+  35          /* Description: 电机状态机函数，包括初始化、预充电、顺风逆风判断、预定位、启
+             -动、运行、故障等
+  36          /*---------------------------------------------------------------------------*/
+  37          void MC_Control(void)
+  38          {
+  39   1        switch(mcState)
+  40   1        {
+  41   2          case mcReady:    // 关闭输出,上电会对电流进行采集校准,当采样校准结束标志置1且
+             -启动指令置1后，才跳转到mcInit
+  42   2            Motor_Ready();
+  43   2          
+  44   2            if((mcCurOffset.OffsetFlag == 1) && (mcSpeedRamp.FlagONOFF == 1) && (mcFocCtrl.State_Count == 0)) 
+  45   2            {
+  46   3                mcState = mcInit;
+  47   3                FOC_EFREQACC  = 0;               
+  48   3                FOC_EFREQMIN  = 0;
+  49   3      //          FOC_EFREQMIN  = Motor_Omega_Ramp_Min;
+  50   3                FOC_EFREQHOLD = 0;
+  51   3            }
+C51 COMPILER V9.52.0.0   FOCCONTROL                                                        04/16/2020 10:07:49 PAGE 2   
+
+  52   2          break;
+  53   2      
+  54   2          case mcInit:                          // 初始化状态，进入mcCharge状态
+  55   2            Motor_Init();
+  56   2            mcState               =  mcCharge;               // 跳入mcCharge状态
+  57   2            mcFocCtrl.State_Count = Charge_Time;
+  58   2            mcFocCtrl.TPCtrlDealy = 1000;                     //电机正常运行500ms后再开发热丝
+  59   2          break;
+  60   2      
+  61   2          case mcCharge:                        // 预充电状态，MCU输出固定频率占空比，预充电结
+             -束后，跳入mcTailWind
+  62   2            Motor_Charge();
+  63   2            #if (IPMState == NormalRun)           // 正常按电机状态机运行
+  64   2              if( mcFocCtrl.State_Count == 0)
+  65   2              {
+  66   3                  MOE = 0;                      // 关闭输出
+  67   3      
+  68   3                  mcState               = mcTailWind;
+  69   3                  mcFocCtrl.State_Count = 0;
+  70   3              }
+  71   2      
+  72   2            #endif
+  73   2          break;
+  74   2      
+  75   2          case mcTailWind:
+  76   2            #if (TailWind_Mode == NoTailWind)     // 无顺逆风处理的，直接跳入下一个状态
+  77   2              mcState                           = mcPosiCheck;
+  78   2              McStaSet.SetFlag.PosiCheckSetFlag = 0;
+  79   2              mcFocCtrl.mcPosCheckAngle         = 0xffff;         // 角度赋初值
+  80   2      
+  81   2            #elif (TailWind_Mode == TailWind)
+                      Motor_TailWind();
+              
+                    #endif
+  85   2          break;
+  86   2      
+  87   2          case mcPosiCheck:
+  88   2            #if (PosCheckEnable==0)             //初始位置检测不使能时初始角度为预定位角度
+                      mcFocCtrl.mcPosCheckAngle = Align_Angle;
+                      mcState = mcAlign;
+                      mcFocCtrl.State_Count = Align_Time;
+              
+                    #else
+  94   2              RPD();
+  95   2      
+  96   2            #endif
+  97   2          break;
+  98   2      
+  99   2          case mcAlign:       // 预定位时间结束后，直接启动; AlignTestMode=1用于初始位置检测�
+             -��试用
+ 100   2            Motor_Align();
+ 101   2      
+ 102   2            
+ 103   2            #if (AlignTestMode==1)
+                        while(1);
+              
+                    #else
+ 107   2                if(mcFocCtrl.State_Count == 0)
+ 108   2                {
+ 109   3                  mcState = mcStart;
+ 110   3                }
+ 111   2      
+C51 COMPILER V9.52.0.0   FOCCONTROL                                                        04/16/2020 10:07:49 PAGE 3   
+
+ 112   2            #endif
+ 113   2          break;
+ 114   2      
+ 115   2          case mcStart:                           // 配置电机启动参数，进入mcRun状态。
+ 116   2            Motor_Open();
+ 117   2          break;
+ 118   2      
+ 119   2          case mcPllTect:                           // 配置电机启动参数，进入mcRun状态。
+ 120   2            #if (EstimateAlgorithm == PLL)
+                        Motor_PllStart();
+              
+                    #endif
+ 124   2          break;
+ 125   2      
+ 126   2          case mcRun:                             // 运行状态，若运行状态的给定变为0，进入mcStop
+             -状态。
+ 127   2            if(mcSpeedRamp.TargetValue == 0)//&&(mcSpeedRamp.ActualValue < Motor_Min_Speed))
+ 128   2            {
+ 129   3                mcState               = mcStop;
+ 130   3      //          mcFocCtrl.State_Count = 2000;
+ 131   3                FOC_IQREF             = 0;
+ 132   3            }
+ 133   2          break;
+ 134   2      
+ 135   2          case mcStop:
+ 136   2            if((mcFocCtrl.SpeedFlt < Motor_Min_Speed)||(mcFocCtrl.State_Count==0))    // 实际转速低于Motor_Min_
+             -Speed或延时到了，关闭PWM输出或进入刹车
+ 137   2            {
+ 138   3              #if (StopBrakeFlag == 0)
+ 139   3              {
+ 140   4                  FOC_CR1 = 0x00;
+ 141   4                  /*关闭FOC*/
+ 142   4                  ClrBit(DRV_CR, FOCEN);
+ 143   4        
+ 144   4                  mcState = mcReady;
+ 145   4              }
+ 146   3              #else
+                      {
+                          if(mcFocCtrl.SpeedFlt < Motor_Stop_Speed)                           // 低于StopSpeed,刹车
+                          {
+                              MOE = 0;
+                              FOC_CR1 = 0x00;
+                              ClrBit(DRV_CR, FOCEN);
+                              DRV_DR  = DRV_ARR+1;
+                              DRV_CMR &= 0xFFC0;
+                              DRV_CMR |= 0x015;                                               // 三相下桥臂通，刹车
+                              ClrBit(DRV_CR, OCS);                                            // OCS = 0, DRV_COMR;OCS = 1, FOC/SVPWM/SPWM
+                              MOE = 1;
+                              mcState               = mcBrake;
+                              mcFocCtrl.State_Count = StopWaitTime;
+                          }
+                      }
+                      #endif
+ 163   3            }
+ 164   2            else if(mcSpeedRamp.TargetValue > 0)                                      // Stop状态时，电机在减速状态，又�
+             -�机进入正常运行模式
+ 165   2            {
+ 166   3                mcState            = mcRun;
+ 167   3                mcFocCtrl.CtrlMode = 0;
+ 168   3                FOC_IQREF          = IQ_RUN_CURRENT;
+ 169   3            }
+ 170   2          break;
+C51 COMPILER V9.52.0.0   FOCCONTROL                                                        04/16/2020 10:07:49 PAGE 4   
+
+ 171   2      
+ 172   2          case mcBrake:
+ 173   2            if(mcFocCtrl.State_Count == 0)
+ 174   2            {
+ 175   3                MOE=0;
+ 176   3                ClrBit(DRV_CR, FOCEN);
+ 177   3                mcState = mcReady;
+ 178   3            }
+ 179   2          break;
+ 180   2      
+ 181   2          case mcFault:
+ 182   2          break;
+ 183   2        }
+ 184   1      }
+ 185          
+ 186          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    361    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      8    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

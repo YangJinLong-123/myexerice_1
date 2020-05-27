@@ -1,0 +1,497 @@
+C51 COMPILER V9.52.0.0   INTERRUPT                                                         04/16/2020 10:07:49 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE INTERRUPT
+OBJECT MODULE PLACED IN .\Output\Interrupt.obj
+COMPILER INVOKED BY: D:\Keil4\C51\BIN\C51.EXE ..\User\Source\Application\Interrupt.c LARGE OMF2 WARNINGLEVEL(0) OPTIMIZE
+                    -(5,SPEED) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\Interrupt.lst) 
+                    -TABS(2) OBJECT(.\Output\Interrupt.obj)
+
+line level    source
+
+   1          /**************************** (C) COPYRIGHT 2017 Fortiortech shenzhen *****************************
+   2          * File Name          : Interrupt.c
+   3          * Author             : Fortiortech  Appliction Team
+   4          * Version            : V1.0
+   5          * Date               : 2017-12-26
+   6          * Description        : This file contains all the interrupt function used for Motor Control.
+   7          ***************************************************************************************************
+   8          * All Rights Reserved
+   9          **************************************************************************************************/
+  10          
+  11          
+  12          /* Includes -------------------------------------------------------------------------------------*/
+  13          // #include <Interrupt.h>
+  14          #include <FU68xx_2.h>
+  15          #include <Myproject.h>
+  16          uint16 xdata spidebug[4] = { 0 };
+  17          uint8  ExternFlag = 0;
+  18          uint8  ReadtimeFlag = 0;
+  19          uint16 Temperature;
+  20          
+  21          uint32 Temp_value;
+  22          uint32 Temp_value_1;
+  23          uint32 Temp_value_2;
+  24          uint32  Mother_line_Power;
+  25          uint8   Mother_line_Power_num;
+  26          uint16  Mother_line_Power_averge;
+  27          
+  28          
+  29          uint16 code ACOS[181] = { 0,149 ,211 ,259 ,299 ,335 ,367 ,397 ,425 ,451 ,476 ,499 ,522 ,544 ,565 ,585 ,605
+             - ,624 ,643 ,661 ,679 ,697 , 714 , 731 , 747 ,//0-26
+  30                                    763 ,779 , 795 , 810 , 826 , 841 , 855 , 870 , 884 , 899 , 913 ,927 , 941 , 954 , 968 , 981 ,
+             - 995 , 1008 , 1021 , 1034 , 1047,//27-47
+  31                                    1059 , 1072 , 1085 , 1097 , 1110 , 1122 , 1134 , 1146 , 1159 ,1171 , 1183 , 1195 , 1207 , 121
+             -8 , 1230 , 1242 , 1254 , 1265 , //48-65
+  32                                    1277 , 1289 , 1300 , 1312 , 1323 , 1335 , 1346 , 1357 , 1369 ,1380 , 1391 , 1403 , 1414 , 142
+             -5 , 1436 , 1447 , 1459 , 1470 ,//66-83
+  33                                    1481 , 1492 , 1503 , 1514 , 1525 , 1536 , 1548 , 1559 , 1570 ,1581 , 1592 , 1603 , 1614 , 162
+             -5 , 1636 , 1648 , 1659 , 1670 , 
+  34                                    1681 , 1692 , 1703 , 1715 , 1726 , 1737 , 1748 , 1760 , 1771 ,1782 , 1794 , 1805 , 1816 , 182
+             -8 , 1839 , 1851 , 1863 , 1874 ,
+  35                                    1886 , 1897 , 1909 , 1921 , 1933 , 1945 , 1957 , 1969 , 1981 ,1993 , 2005 , 2017 , 2030 , 204
+             -2 , 2055 , 2067 , 2080 , 2093 , 
+  36                                    2106 , 2118 , 2132 , 2145 , 2158 , 2171 , 2185 , 2199 , 2212 ,2226 , 2240 , 2255 , 2269 , 228
+             -4 , 2298 , 2313 , 2328 , 2344 ,
+  37                                    2359 , 2375 , 2391 , 2408 , 2425 , 2442 , 2459 , 2477 , 2495 ,2514 , 2533 , 2553 , 2573 , 259
+             -4 , 2616 , 2638 , 2662 , 2686 ,
+  38                                    2712 , 2740 , 2769 , 2801 , 2836 , 2875 , 2921 , 2980 ,3078 };
+  39          
+  40          
+  41          
+  42          /*-------------------------------------------------------------------------------------------------
+  43              Function Name : void FO_INT(void)
+  44              Description   : FO_INT interrupt，硬件FO过流保护，关断输出，中断优先级最高
+C51 COMPILER V9.52.0.0   INTERRUPT                                                         04/16/2020 10:07:49 PAGE 2   
+
+  45              Input         : 无
+  46              Output        : 无
+  47          -------------------------------------------------------------------------------------------------*/
+  48          void FO_INT(void) interrupt 1                                                   // 硬件FO过流中断，
+             -关闭输出
+  49          {
+  50   1          FaultProcess();                                                             // 关闭输出
+  51   1          mcFaultSource = FaultHardOVCurrent;                                         // 硬件过流保护
+  52   1          mcState       = mcFault;                                                    // 状态为mcFault
+  53   1          IF0           = 0;                                                          // clear P00 interrupt fla
+             -g
+  54   1      }
+  55          /*-------------------------------------------------------------------------------------------------
+  56              Function Name : void CMP_ISR(void)
+  57              Description   : CMP3：硬件比较器过流保护，关断输出，中断优先级最高
+  58                              CMP0/1/2：顺逆风判断
+  59              Input         : 无
+  60              Output        : 无
+  61          -------------------------------------------------------------------------------------------------*/
+  62          void CMP_ISR(void) interrupt 7
+  63          {
+  64   1          if(ReadBit(CMP_SR, CMP3IF))
+  65   1          {
+  66   2              if(mcState!=mcPosiCheck)
+  67   2              {
+  68   3                  FaultProcess();                                                     // 关闭输出
+  69   3                  mcFaultSource=FaultHardOVCurrent;                                   // 硬件过流保护
+  70   3                  mcState = mcFault;                                                  // 状态为mcFault
+  71   3              }
+  72   2              else
+  73   2              {
+  74   3                  MOE     = 0;                                                                        // 关闭M
+             -OE
+  75   3                  RPDPara.InsetCount[RPDPara.injecttimes]  = TIM2__CNTR;                              // 将定�
+             -��器2的计数值赋值给数组
+  76   3                  RPDPara.DetectCount[RPDPara.injecttimes] = RPDPara.InsetCount[RPDPara.injecttimes]; // 两组�
+             -��据，一组用于观察原始数据，一组用于处理数据
+  77   3                  TIM2__CNTR                               = 0;                                       // TIM2计
+             -数器值清零
+  78   3                  RPDPara.injecttimes++;                                                              // RPD注�
+             -��拍数累加
+  79   3      
+  80   3              }
+  81   2              ClrBit(CMP_SR, CMP3IF);
+  82   2          }
+  83   1      
+  84   1          #if (FRDetectMethod == BEMFMethod)
+                      //通过BEMF做顺风启动功能
+                      BEMFDetectFunc();
+                  #endif
+  88   1      }
+  89          
+  90          /*---------------------------------------------------------------------------*/
+  91          /* Name     :   void TIM2_INT(void) interrupt 4
+  92          /* Input    :   NO
+  93          /* Output   :   NO
+  94          /* Description: 正反转检测(RSD)
+  95          /*---------------------------------------------------------------------------*/
+  96          void TIM2_INT(void) interrupt 4
+  97          {
+  98   1          if(ReadBit(TIM2_CR1, T2IR))
+  99   1          {
+C51 COMPILER V9.52.0.0   INTERRUPT                                                         04/16/2020 10:07:49 PAGE 3   
+
+ 100   2              ClrBit(TIM2_CR1, T2IR);
+ 101   2          }
+ 102   1          if(ReadBit(TIM2_CR1, T2IP))
+ 103   1          {
+ 104   2              #if (FRDetectMethod == RSDMethod)
+                          RSDFRDetect();                                                      //RSD正反转检测
+                      #endif
+ 107   2      
+ 108   2              ClrBit(TIM2_CR1, T2IP);
+ 109   2          }
+ 110   1          if(ReadBit(TIM2_CR1, T2IF))                                                 //溢出中断,用于判断静止,时间为349ms�
+             -�
+ 111   1          {
+ 112   2              #if (FRDetectMethod == RSDMethod)
+                          RSDDetect.RSDState=Static;
+                          RSDDetect.RSDFlag=1;
+                      #endif
+ 116   2      
+ 117   2              ClrBit(TIM2_CR1, T2IF);
+ 118   2          }
+ 119   1          
+ 120   1      }
+ 121          /*---------------------------------------------------------------------------*/
+ 122          /* Name     :   void TIM23_INT(void) interrupt 9
+ 123          /* Input    :   NO
+ 124          /* Output   :   NO
+ 125          /* Description: Capture PWM ，中断优先级第二，高于FOC中断，用于PWM调速
+ 126          /*---------------------------------------------------------------------------*/
+ 127          void TIM3_INT(void) interrupt 9
+ 128          {
+ 129   1          if(ReadBit(TIM3_CR1, T3IR))
+ 130   1          {
+ 131   2             GP11 = 1;
+ 132   2             ClrBit(TIM3_CR1, T3IR);
+ 133   2          }
+ 134   1          if(ReadBit(TIM3_CR1, T3IP))                                                 //周期中断
+ 135   1          {
+ 136   2            //GP11 = 0;
+ 137   2             ClrBit(TIM3_CR1, T3IP);
+ 138   2          }
+ 139   1          if(ReadBit(TIM3_CR1, T3IF))
+ 140   1          {
+ 141   2             GP11 = 0;
+ 142   2             ClrBit(TIM3_CR1, T3EN);            //关闭计数器     
+ 143   2             ClrBit(TIM3_CR1, T3IF);
+ 144   2          }
+ 145   1      }
+ 146          /*---------------------------------------------------------------------------*/
+ 147          /* Name     :   void FOC_INT(void) interrupt 3
+ 148          /* Input    :   NO
+ 149          /* Output   :   NO
+ 150          /* Description: FOC中断(Drv中断),每个载波周期执行一次，用于处理响应较高的程序，
+             -中断优先级第二。DCEN开了就会产生中断。
+ 151          /*---------------------------------------------------------------------------*/
+ 152          void FOC_INT(void) interrupt 3
+ 153          {
+ 154   1          if(ReadBit(DRV_SR, DCIF))                                                   // 比较中断
+ 155   1          {
+ 156   2              APP_DIV();                                                              //启动除法器，避免与过调值中的除法冲突
+ 157   2      
+ 158   2              Fault_Overcurrent(&mcCurVarible);                                       // 软件过流保护.约30us
+ 159   2      
+C51 COMPILER V9.52.0.0   INTERRUPT                                                         04/16/2020 10:07:49 PAGE 4   
+
+ 160   2              #if ((FRDetectMethod == FOCMethod) && (TailWind_Mode == TailWind))
+                          TailWindSpeedDetect();                                              //顺逆风检测
+                      #endif
+ 163   2      
+ 164   2              #if defined (SPI_DBG_SW)                                                //软件调试模式
+                          spidebug[0] = mcFocCtrl.mcDcbusFlt<<1;                              //SPIDATA0;
+                          spidebug[1] = FOC__IA;                                              //SPIDATA1;
+                          spidebug[2] = FOC__IB;                                              //SPIDATA2;
+                          spidebug[3] = FOC__THETA;                                           //SPIDATA3;
+                      #endif
+ 170   2      
+ 171   2              ClrBit(DRV_SR, DCIF);
+ 172   2          }
+ 173   1      }
+ 174          
+ 175          
+ 176          
+ 177          /*---------------------------------------------------------------------------*/
+ 178          /* Name     :   void TIM_1MS_INT(void) interrupt 10
+ 179          /* Input    :   NO
+ 180          /* Output   :   NO
+ 181          /* Description: 1ms定时器中断（SYS TICK中断），用于处理附加功能，如控制环路响应�
+             -��各种保护等。中断优先级低于FO中断和FOC中断。
+ 182          /*---------------------------------------------------------------------------*/
+ 183          void TIM_1MS_INT(void) interrupt 10
+ 184          {
+ 185   1          if(ReadBit(DRV_SR, SYSTIF))                                                 // SYS TICK中断
+ 186   1          {
+ 187   2              SetBit(ADC_CR, ADCBSY);                                                 //使能ADC的DCBUS采样
+ 188   2              /****功率滤波*****/
+ 189   2              if(mcState == mcRun)
+ 190   2              {
+ 191   3                  mcFocCtrl.CurrentPower = FOC__POW << 1;
+ 192   3                  mcFocCtrl.Powerlpf     = LPFFunction(mcFocCtrl.CurrentPower,mcFocCtrl.Powerlpf,20);     //注意
+             -低通滤波器系数范围为0---127
+ 193   3              }
+ 194   2      
+ 195   2              /****速度滤波、反电动势滤波*****/
+ 196   2              if((mcState != mcInit) && (mcState != mcReady))
+ 197   2              {
+ 198   3                  mcFocCtrl.SpeedFlt = LPFFunction(FOC__EOME, mcFocCtrl.SpeedFlt, 30);              //100     //注意低
+             -通滤波器系数范围为0---127
+ 199   3                  mcFocCtrl.EsValue  = LPFFunction(FOC__ESQU,mcFocCtrl.EsValue,10);
+ 200   3              }
+ 201   2              else
+ 202   2              {
+ 203   3                  mcFocCtrl.SpeedFlt = 0;
+ 204   3              }
+ 205   2              
+ 206   2              /****UQ电压值滤波****/
+ 207   2              mcFocCtrl.UqFlt = LPFFunction(FOC__UQ,mcFocCtrl.UqFlt,10);              // UQ值
+ 208   2              mcFocCtrl.UdFlt = LPFFunction(FOC__UD,mcFocCtrl.UdFlt,10);              // UD值
+ 209   2      
+ 210   2              Speed_response();                                                       //环路响应，如速度环、转矩环、功�
+             -�环等
+ 211   2                      
+ 212   2              KeyScan();                                                              //获取按键值
+ 213   2      
+ 214   2              
+ 215   2              if(KS.ChangeKeyFlg)                                                     //更新LED显示
+ 216   2              {
+ 217   3                LEDControl();
+C51 COMPILER V9.52.0.0   INTERRUPT                                                         04/16/2020 10:07:49 PAGE 5   
+
+ 218   3                KS.ChangeKeyFlg = 0;
+ 219   3              }
+ 220   2              
+ 221   2              #if (StartONOFF_Enable)
+                          ONOFF_Starttest(&ONOFFTest);
+                      #endif
+ 224   2      
+ 225   2              /*****DCbus的采样获取值并滤波******/
+ 226   2      //        AdcSampleValue.ADCDcbus = ADC2_DR;
+ 227   2      //        mcFocCtrl.mcDcbusFlt    = AdcSampleValue.ADCDcbus << 3;
+ 228   2              if(mcState == mcRun)                               
+ 229   2              {
+ 230   3                  mcFocCtrl.mcDcbusFlt=FOC__UDCFLT;
+ 231   3              }
+ 232   2              else
+ 233   2              {
+ 234   3                  AdcSampleValue.ADCDcbus = ADC2_DR;
+ 235   3                  mcFocCtrl.mcDcbusFlt    = AdcSampleValue.ADCDcbus << 3;
+ 236   3              }         
+ 237   2              
+ 238   2              /***********温度采集***********/
+ 239   2              Temperature        = ADC1_DR<<3 ;
+ 240   2              User.Temperature = LPFFunction(Temperature ,User.Temperature,10);             // 
+ 241   2      
+ 242   2              /*****故障保护函数功能，如过欠压保护、启动保护、缺相、堵转等********/
+ 243   2              Fault_Detection();
+ 244   2      
+ 245   2      //        LED_Display();//LED灯显示
+ 246   2      
+ 247   2              /****模拟调速****/
+ 248   2              #if (SPEED_MODE == SREFMODE)
+              //            VSPSample();
+                      #endif
+ 251   2      
+ 252   2              /********睡眠模式*******/
+ 253   2      //            Sleepmode();
+ 254   2      
+ 255   2              /*****电机状态机的时序处理*****/
+ 256   2              if(mcFocCtrl.State_Count > 0)         mcFocCtrl.State_Count--;
+ 257   2              if(BEMFDetect.BEMFTimeCount > 0)      BEMFDetect.BEMFTimeCount--;
+ 258   2              if(RSDDetect.RSDCCWSBRCnt > 0)        RSDDetect.RSDCCWSBRCnt--;
+ 259   2              
+ 260   2              Time.UnderVoltageCount ++;
+ 261   2              if(Time.UnderVoltageCount >200) 
+ 262   2              {
+ 263   3                Time.UnderVoltageCount = 200;
+ 264   3              }
+ 265   2              if( mcState == mcRun )
+ 266   2              {
+ 267   3                if(mcFocCtrl.TPCtrlDealy > 0)         mcFocCtrl.TPCtrlDealy--;
+ 268   3              }
+ 269   2      
+ 270   2              #if (FRDetectMethod==FOCMethod)
+ 271   2                  FOCTailWindTimeLimit();
+ 272   2              #endif
+ 273   2      
+ 274   2              /*****电机启动爬坡函数处理*****/
+ 275   2              StarRampDealwith();
+ 276   2      
+ 277   2              ClrBit(DRV_SR, SYSTIF);                                                 // 清零标志位
+ 278   2          }
+ 279   1          
+C51 COMPILER V9.52.0.0   INTERRUPT                                                         04/16/2020 10:07:49 PAGE 6   
+
+ 280   1          
+ 281   1          
+ 282   1          if(ReadBit(TIM4_CR1, T4IR))
+ 283   1          {
+ 284   2            ClrBit(TIM4_CR1, T4IR);
+ 285   2          }
+ 286   1          if(ReadBit(TIM4_CR1, T4IP))                                                 //周期中断
+ 287   1          {
+ 288   2            ClrBit(TIM4_CR1, T4IP);
+ 289   2          }
+ 290   1          if(ReadBit(TIM4_CR1, T4IF))
+ 291   1          {
+ 292   2            ClrBit(TIM4_CR1, T4IF);
+ 293   2          }
+ 294   1      }
+ 295          
+ 296          
+ 297          /*---------------------------------------------------------------------------*/
+ 298          /* Name     :   void USART_INT(void) interrupt 12
+ 299          /* Input    :   NO
+ 300          /* Output   :   NO
+ 301          /* Description: 串口中断，中断优先级最低，用于接收调速信号,无中断插入时8us
+ 302          /*---------------------------------------------------------------------------*/
+ 303          void USART_INT(void)  interrupt 12
+ 304          {
+ 305   1          if(RI == 1)
+ 306   1          {
+ 307   2              RI = 0;
+ 308   2              Uart.Uredata= UT_DR;                                                    //读接收数据
+ 309   2          }
+ 310   1      }
+ 311          /*---------------------------------------------------------------------------*/
+ 312          /* Name     :   void EXTERN_INT(void) interrupt 2
+ 313          /* Input    :   NO
+ 314          /* Output   :   NO
+ 315          /* Description: 过零点检测
+ 316          /*---------------------------------------------------------------------------*/
+ 317          void EXTERN_INT(void) interrupt 2
+ 318          {
+ 319   1         ClrBit(TIM3_CR1, T3EN);            //关闭计数器
+ 320   1            
+ 321   1        //用于检测外部中断的高电平时间
+ 322   1        if((mcState != mcRun)||(mcState != mcStart))
+ 323   1        {
+ 324   2          if(ExternFlag == 0)
+ 325   2          {
+ 326   3            IT11 = 0;
+ 327   3            IT10 = 1;               // 00: posedge mode interrupt，01: negedge mode interrupt，1x: edge-change mode inte
+             -rrupt
+ 328   3            ExternFlag =1;
+ 329   3            User.EdgeLevelTime =0;
+ 330   3            SetBit(TIM4_CR1, T4EN);           //使能计数器，启动计数
+ 331   3          }
+ 332   2          else
+ 333   2          {
+ 334   3            if(ReadtimeFlag ==0)
+ 335   3            {
+ 336   4              User.EdgeLevelTime = TIM4__CNTR;
+ 337   4              ClrBit(TIM4_CR1, T4EN);           //关闭计数器
+ 338   4              TIM4__CNTR = 0;
+ 339   4              ReadtimeFlag = 1;
+ 340   4            }
+C51 COMPILER V9.52.0.0   INTERRUPT                                                         04/16/2020 10:07:49 PAGE 7   
+
+ 341   3          }
+ 342   2        }
+ 343   1        
+ 344   1        //GP06 = 0;
+ 345   1      
+ 346   1      /*
+ 347   1       #define Temperature_Off                (260000)          
+ 348   1       #define Temperature_LOW                (18000)
+ 349   1       #define Temperature_Mid                (15000)
+ 350   1       #define Temperature_High               (12400) 
+ 351   1      */
+ 352   1        
+ 353   1        GP11 = 0;
+ 354   1        if((mcFocCtrl.TPCtrlDealy ==0)&&(mcState == mcRun)&&(Temp_value != 2600)&&(mcFaultSource == 0)&&(mcFocCtr
+             -l.SpeedFlt > 8000)&&(mcFocCtrl.SpeedFlt < 18000) )
+ 355   1        {  
+ 356   2          //TemperaturePID();
+ 357   2          //TIM3__ARR = User.ScrOnAngleTimeDatum;
+ 358   2          
+ 359   2          
+ 360   2          
+ 361   2          Mother_line_Power+=mcFocCtrl.mcDcbusFlt;
+ 362   2          Mother_line_Power_num++;
+ 363   2          if(Mother_line_Power_num>=50)
+ 364   2          {
+ 365   3              Mother_line_Power_num=0;
+ 366   3              Mother_line_Power_averge=Mother_line_Power/50;
+ 367   3              Mother_line_Power=0;
+ 368   3              Temp_value_2=Temp_value*1200;
+ 369   3              Temp_value_1 = (ACOS[180-((Temp_value_2)/((Mother_line_Power_averge/90)*(Mother_line_Power_averge/90))
+             -)])*7+1000;
+ 370   3              if(Temp_value_1<=1600)
+ 371   3              {
+ 372   4                  Temp_value_1=1600;
+ 373   4              }
+ 374   3              if(Temp_value_1>=18000)
+ 375   3              {
+ 376   4                  Temp_value_1=18000;
+ 377   4              }
+ 378   3                    
+ 379   3          }
+ 380   2          
+ 381   2            TIM3__ARR = Temp_value_1;
+ 382   2          //TIM3__ARR = Temp_value;
+ 383   2          TIM3__DR  = TIM3__ARR - 800;  
+ 384   2          TIM3__CNTR = 0;
+ 385   2        
+ 386   2          SetBit(TIM3_CR1, T3EN);           //开启计数器
+ 387   2          
+ 388   2        }
+ 389   1        if((mcState == mcFault)&&(mcFaultSource == FaultUnderVoltage)&& (Time.UnderVoltageCount > 80))
+ 390   1        {
+ 391   2          mcState = mcReady;
+ 392   2          mcFaultSource=FaultNoSource;
+ 393   2          mcFaultDect.VoltRecoverCnt = 0;
+ 394   2        }
+ 395   1      
+ 396   1         Time.UnderVoltageCount =0; 
+ 397   1         ClrBit(P2_IF, P20);                                                          // 清零P20标志位
+ 398   1      }
+ 399          
+ 400          
+C51 COMPILER V9.52.0.0   INTERRUPT                                                         04/16/2020 10:07:49 PAGE 8   
+
+ 401          /* Private variables ----------------------------------------------------------------------------*/
+ 402          void INT0(void) interrupt 0
+ 403          {
+ 404   1      }
+ 405          void INT5(void) interrupt 5
+ 406          {
+ 407   1      }
+ 408          void INT6(void) interrupt 6
+ 409          {
+ 410   1      }
+ 411          void INT8(void) interrupt 8
+ 412          {
+ 413   1      }
+ 414          void INT11(void) interrupt 11
+ 415          {
+ 416   1      }
+ 417          void INT13(void) interrupt 13
+ 418          {
+ 419   1      }
+ 420          void INT14(void) interrupt 14
+ 421          {
+ 422   1      }
+ 423          void INT15(void) interrupt 15
+ 424          {
+ 425   1      }
+ 426          
+ 427          
+ 428          
+ 429          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1688    ----
+   CONSTANT SIZE    =    362    ----
+   XDATA SIZE       =     31    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

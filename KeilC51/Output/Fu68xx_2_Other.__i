@@ -1,0 +1,1 @@
+"..\Library\FU68xx_Hardware_Driver\Source\Fu68xx_2_Other.c" LARGE OMF2 WARNINGLEVEL (0) OPTIMIZE (5,SPEED) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\Fu68xx_2_Other.lst) TABS (2) OBJECT(.\Output\Fu68xx_2_Other.obj)

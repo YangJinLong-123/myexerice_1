@@ -1,0 +1,149 @@
+C51 COMPILER V9.52.0.0   FLASH                                                             04/16/2020 10:07:51 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE FLASH
+OBJECT MODULE PLACED IN .\Output\Flash.obj
+COMPILER INVOKED BY: D:\Keil4\C51\BIN\C51.EXE ..\User\Source\Function\Flash.c LARGE OMF2 WARNINGLEVEL(0) OPTIMIZE(5,SPEE
+                    -D) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\Flash.lst) TABS(2) OBJ
+                    -ECT(.\Output\Flash.obj)
+
+line level    source
+
+   1          
+   2          /************************ (C) COPYRIGHT 2015 FT *******************************
+   3          * File Name          : 
+   4          * Author             : Application Team  Tom.wang 
+   5          * Version            : V2.0.0
+   6          * Date               : 06/15/2015
+   7          * Description        : 
+   8          ********************************************************************************
+   9          /*******************************************************************************
+  10          * All Rights Reserved
+  11          *******************************************************************************/
+  12          
+  13          /* Includes ------------------------------------------------------------------*/
+  14          #include <FU68xx_2.h>
+  15          #include <Myproject.h>
+  16          #include <Customer_Debug.h>
+  17          
+  18          #define STARTPAGEROMADDRESS 0X3F00 
+  19          
+  20          ROM_TypeDef xdata  Rom;
+  21          
+  22          uint8 Flash_GetAddress(void);
+  23          void Flash_ErasePageRom(void);
+  24          void Flash_KeyWriteValue( uint8 value);
+  25          
+  26          /*-------------------------------------------------------------------------------------------------
+  27            Function Name : void Flash_GetAddress(void)
+  28            Description   : 读取Flash当前地址中的值
+  29            Input         : null
+  30            Output        : null
+  31          -------------------------------------------------------------------------------------------------*/
+  32          uint8 Flash_GetAddress(void)
+  33          {
+  34   1        uint8 i;
+  35   1        __IO uint8 tevalue = 0;        //临时变量
+  36   1        __IO uint8 revalue = 0;        //返回值
+  37   1      
+  38   1        revalue = 0;
+  39   1        Rom.PageAddress = STARTPAGEROMADDRESS;
+  40   1        
+  41   1        tevalue = *(uint8 code *)Rom.PageAddress;
+  42   1        
+  43   1        while(tevalue != 0x7F)
+  44   1        {
+  45   2          Rom.PageAddress = Rom.PageAddress + 0x80; 
+  46   2          tevalue = *(uint8 code *)Rom.PageAddress;
+  47   2          
+  48   2          if(Rom.PageAddress > 0x3F00)
+  49   2          {
+  50   3            Rom.PageAddress = STARTPAGEROMADDRESS;        
+  51   3            revalue = 1;
+  52   3            Rom.OffsetAddressCur = 0;
+  53   3            Rom.OffsetAddressTar = Rom.OffsetAddressCur + 1;
+C51 COMPILER V9.52.0.0   FLASH                                                             04/16/2020 10:07:51 PAGE 2   
+
+  54   3            Flash_Sector_Write(Rom.PageAddress,0X7F); 
+  55   3            tevalue = 0x7F;
+  56   3          }      
+  57   2        }
+  58   1      
+  59   1        for(i = 0; i < 128;i++)
+  60   1        {
+  61   2          tevalue = *(uint8 code *)(Rom.PageAddress + i);
+  62   2          if(tevalue > 0)
+  63   2          {
+  64   3            Rom.OffsetAddressCur = i;
+  65   3            Rom.OffsetAddressTar = Rom.OffsetAddressCur + 1;
+  66   3            revalue = tevalue;
+  67   3          }
+  68   2        }
+  69   1      
+  70   1        return revalue;
+  71   1      }
+  72          
+  73          
+  74          void Flash_ErasePageRom(void)
+  75          {
+  76   1        if(Rom.OffsetAddressCur >= 127)
+  77   1        { 
+  78   2          Rom.OffsetAddressCur = 0;
+  79   2          Rom.OffsetAddressTar = Rom.OffsetAddressCur + 1;
+  80   2      
+  81   2          Flash_Sector_Erase(Rom.PageAddress);                   //擦除本页
+  82   2      
+  83   2          if(Rom.PageAddress < 0x3F00)    
+  84   2          {
+  85   3            Rom.PageAddress = Rom.PageAddress + 0x80;
+  86   3          }
+  87   2          else 
+  88   2          {
+  89   3            Rom.PageAddress = STARTPAGEROMADDRESS;
+  90   3          }
+  91   2          
+  92   2          Flash_Sector_Write(Rom.PageAddress + Rom.OffsetAddressCur, 0x7F);    //首地址写入
+  93   2        }
+  94   1      }
+  95          
+  96          void Flash_KeyWriteValue( uint8 value)
+  97          {
+  98   1        uint8 key;
+  99   1        uint8 i;
+ 100   1        uint8 TempReadRomValue;
+ 101   1      
+ 102   1        key = value; 
+ 103   1      
+ 104   1        TempReadRomValue = Rom.ReadValue;                       
+ 105   1        
+ 106   1        for(i = 0;((Rom.WriteValue != TempReadRomValue)&&(i < 5));i++)
+ 107   1        {
+ 108   2          Flash_Sector_Write(Rom.PageAddress + Rom.OffsetAddressTar, key);
+ 109   2          TempReadRomValue = *(uint8 code *)(Rom.PageAddress + Rom.OffsetAddressTar);
+ 110   2        }
+ 111   1        
+ 112   1        if(Rom.WriteValue == TempReadRomValue)
+ 113   1        {
+ 114   2          Rom.ReadValue = TempReadRomValue;
+ 115   2        }                                                                    //读出有效数据
+C51 COMPILER V9.52.0.0   FLASH                                                             04/16/2020 10:07:51 PAGE 3   
+
+ 116   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    418    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      7       5
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

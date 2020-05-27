@@ -1,0 +1,395 @@
+C51 COMPILER V9.52.0.0   FOCTAILDECT                                                       04/16/2020 10:07:50 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE FOCTAILDECT
+OBJECT MODULE PLACED IN .\Output\FOCTailDect.obj
+COMPILER INVOKED BY: D:\Keil4\C51\BIN\C51.EXE ..\User\Source\Function\FOCTailDect.c LARGE OMF2 WARNINGLEVEL(0) OPTIMIZE(
+                    -5,SPEED) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\FOCTailDect.lst)
+                    - TABS(2) OBJECT(.\Output\FOCTailDect.obj)
+
+line level    source
+
+   1          /**************************** (C) COPYRIGHT 2017 Fortiortech shenzhen *****************************
+   2          * File Name          : FOCTailDect.c
+   3          * Author             : Fortiortech  Appliction Team
+   4          * Version            : V1.0
+   5          * Date               : 2017-12-26
+   6          * Description        : This file contains foc tailwind detection used for Motor Control.
+   7          ***************************************************************************************************
+   8          * All Rights Reserved
+   9          **************************************************************************************************/
+  10          
+  11          
+  12          /* Includes -------------------------------------------------------------------------------------*/
+  13          // #include <FOCTailDect.h>
+  14          #include <FU68xx_2.h>
+  15          #include <Myproject.h>
+  16          
+  17          /* Private typedef ------------------------------------------------------------------------------*/
+  18          /* Private define -------------------------------------------------------------------------------*/
+  19          /* Private macro --------------------------------------------------------------------------------*/
+  20          /* Private variables ----------------------------------------------------------------------------*/
+  21          
+  22          /* Private function prototypes ------------------------------------------------------------------*/
+  23          /* Private functions ----------------------------------------------------------------------------*/
+  24          MotorTailWindTypeDef xdata  TailWindDetect;
+  25          /*---------------------------------------------------------------------------*/
+  26          /* Name     :   void TailWindDetectInit(void)
+  27          /* Input    :   NO
+  28          /* Output   :   NO
+  29          /* Description: 顺逆风参数初始化
+  30          /*---------------------------------------------------------------------------*/
+  31          void TailWindDetectInit(void)
+  32          {
+  33   1          TailWindDetect.MotorTailWindState     = NormalTailWind;                     //  初始状态为正常�
+             -��顺逆风状态
+  34   1          TailWindDetect.TempThailWindSpeedBase = ThailWindSpeedBase;                 //  顺逆风计算的spee
+             -dbase
+  35   1      
+  36   1          FOC_Init();                                                                 // FOC的初始化
+  37   1          FOC_DQKP    = DQKP_TailWind;                                                // 顺逆风的电流环KP
+  38   1          FOC_DQKI    = DQKI_TailWind;                                                // 顺逆风的电流环KI
+  39   1          FOC_EKP     = OBSW_KP_GAIN_WIND;                                            // 顺逆风速度估算�
+             -�KP
+  40   1          FOC_EKI     = OBSW_KI_GAIN_WIND;                                            // 顺逆风速度估算�
+             -�KI
+  41   1          FOC_OMEKLPF = SPEED_KLPF_WIND;                                              // 顺逆风下的速度�
+             -�波系数
+  42   1          SetBit(FOC_CR1, ANGM);                                                      // 估算模式
+  43   1          // SetBit(DRV_CR, DRVEN);                                                   // Driver 输出计数器�
+             -��能，0-禁止，1-使能
+  44   1          DRV_CMR   |= 0x3F;                                                          // U、V、W相输出
+  45   1          MOE       = 1;                                                              // 打开MOE
+  46   1          FOC_IDREF = 0;                                                              // D轴给定电流
+  47   1          FOC_IQREF = 0;
+C51 COMPILER V9.52.0.0   FOCTAILDECT                                                       04/16/2020 10:07:50 PAGE 2   
+
+  48   1      }
+  49          /*---------------------------------------------------------------------------*/
+  50          /* Name     :   void TailWindSpeedDetect(void)
+  51          /* Input    :   NO
+  52          /* Output   :   NO
+  53          /* Description: 顺逆风速度检测，根据角度的变化趋势来判断方向
+  54          /*---------------------------------------------------------------------------*/
+  55          void TailWindSpeedDetect(void)
+  56          {
+  57   1          static int16 LatestTheta;
+  58   1      
+  59   1          if(mcState == mcTailWind)
+  60   1          {
+  61   2              //顺风检测过程由于FOC内部根据电流估算角度，故直接对FOC_ETHETA进行处理
+  62   2              if(TailWindDetect.MotorTailWindState == NormalTailWind)
+  63   2              {
+  64   3                  LatestTheta = FOC__ETHETA;
+  65   3      
+  66   3                  //旋转方向判断在 <-170度   <10 >-10  >170度三个状态切换的时间
+  67   3                  if(LatestTheta < -30946)
+  68   3                  {
+  69   4                      //计数器未清零或从状态3跳到状态1时清零
+  70   4                      if((TailWindDetect.SpeedTimerClearStatus == 0) || (TailWindDetect.AngleState == 3))
+  71   4                      {
+  72   5                          TailWindDetect.SpeedCountTimer       = 0;
+  73   5                          TailWindDetect.SpeedTimerClearStatus = 1;
+  74   5                          if(TailWindDetect.AngleState == 3) TailWindDetect.ShakeTimes++;//来回1和3之间抖�
+             -��，抖动次数加1
+  75   5                      }
+  76   4                      //<-170度  时设置状态为1，并清零SpeedCountTimer在TIM5中计时
+  77   4                      TailWindDetect.AngleState = 1;
+  78   4                  }
+  79   3                  else if((LatestTheta>-1820)&&(LatestTheta<1820)) //<10 >-10
+  80   3                  {
+  81   4                      //状态1或状态3切换到状态2时保存当前转速时间至TailWindDetect.SpeedCount
+             -[SpeedStoreNum]
+  82   4                      if((TailWindDetect.AngleState==1)||(TailWindDetect.AngleState==3))
+  83   4                      {
+  84   5                          //计算当前转速，RPM
+  85   5                          TailWindDetect.SpeedCountTimer += 1;//防止为0
+  86   5                          TailWindDetect.TailWindSpeed   = MDU_DIV_XDATA_U32(&TailWindDetect.TempThailWindSpeedB
+             -ase, &TailWindDetect.SpeedCountTimer);//测出速度
+  87   5                          TailWindDetect.SpeedStoreNum++;
+  88   5      
+  89   5                          //用于SpeedCountTimer清零
+  90   5                          if(TailWindDetect.SpeedTimerClearStatus == 1) TailWindDetect.SpeedTimerClearStatus = 0
+             -;
+  91   5      
+  92   5                          //有1状态切换到2状态说明角度递增旋转方向为CW，3->2则为CCW
+  93   5                          if(TailWindDetect.AngleState == 1)      TailWindDetect.MotorDir = CW;
+  94   5                          else if(TailWindDetect.AngleState == 3) TailWindDetect.MotorDir = CCW;
+  95   5                          TailWindDetect.ShakeTimes = 0;//清除来回抖动的计数
+  96   5                      }
+  97   4                      TailWindDetect.AngleState = 2;
+  98   4      
+  99   4                  }
+ 100   3                  //>170度时
+ 101   3                  else if(LatestTheta>30946)
+ 102   3                  {
+ 103   4                      //计数器未清零或从状态1跳到状态3时清零
+ 104   4                      if((TailWindDetect.SpeedTimerClearStatus == 0) || (TailWindDetect.AngleState == 1))
+ 105   4                      {
+C51 COMPILER V9.52.0.0   FOCTAILDECT                                                       04/16/2020 10:07:50 PAGE 3   
+
+ 106   5                          TailWindDetect.SpeedCountTimer       = 0;
+ 107   5                          TailWindDetect.SpeedTimerClearStatus = 1;
+ 108   5                          if(TailWindDetect.AngleState==1) TailWindDetect.ShakeTimes++;//来回1和3之间抖动
+ 109   5                      }
+ 110   4                      TailWindDetect.AngleState = 3;
+ 111   4                  }
+ 112   3              }
+ 113   2          }
+ 114   1      }
+ 115          /*---------------------------------------------------------------------------*/
+ 116          /* Name     :   void FOCCloseLoopStart(void)
+ 117          /* Input    :   NO
+ 118          /* Output   :   NO
+ 119          /* Description: 顺风启动
+ 120          /*---------------------------------------------------------------------------*/
+ 121          void FOCCloseLoopStart(void)
+ 122          {
+ 123   1          //配置启动的参数，Omega模式
+ 124   1          FOC_EFREQACC    = Motor_Omega_Ramp_ACC;
+ 125   1          FOC_EFREQMIN    = Motor_Omega_Ramp_Min;
+ 126   1          FOC_EFREQHOLD = Motor_Omega_Ramp_End;
+ 127   1      
+ 128   1          SetBit(FOC_CR1,EFAE);                                                       // 估算器强制输出
+ 129   1          ClrBit(FOC_CR1,RFAE);                                                       // 禁止强拉
+ 130   1          SetBit(FOC_CR1,ANGM);                                                       // 估算模式
+ 131   1      
+ 132   1          //电流环的PI和输出限赋值
+ 133   1          FOC_DQKP = DQKP;
+ 134   1          FOC_DQKI = DQKI;
+ 135   1          FOC_DMAX = DOUTMAX;
+ 136   1          FOC_DMIN = DOUTMIN;
+ 137   1          FOC_QMAX = QOUTMAX;
+ 138   1          FOC_QMIN = QOUTMIN;
+ 139   1      
+ 140   1          /*********PLL或SMO**********/
+ 141   1          #if (EstimateAlgorithm == SMO)
+ 142   1              //根据不同转速确启动的ATO_BW值
+ 143   1              if(TailWindDetect.TailWindSpeed > 300)//300rpm/min
+ 144   1              {
+ 145   2                  FOC_EKP               = OBSW_KP_GAIN_RUN4;
+ 146   2                  FOC_EKI               = OBSW_KI_GAIN_RUN4;
+ 147   2                  mcFocCtrl.mcIqref     = IQ_RUN_CURRENT;
+ 148   2                  mcFocCtrl.State_Count = 10;
+ 149   2              }
+ 150   1              else if(TailWindDetect.TailWindSpeed > 100)//300rpm/min
+ 151   1              {
+ 152   2                  FOC_EKP               = OBSW_KP_GAIN_RUN3;
+ 153   2                  FOC_EKI               = OBSW_KI_GAIN_RUN3;
+ 154   2                  mcFocCtrl.mcIqref     = IQ_RUN_CURRENT;
+ 155   2                  mcFocCtrl.State_Count = 120;
+ 156   2              }
+ 157   1              else
+ 158   1              {
+ 159   2                  FOC_EKP               = OBSW_KP_GAIN_RUN;
+ 160   2                  FOC_EKI               = OBSW_KI_GAIN_RUN;
+ 161   2                  mcFocCtrl.mcIqref     = IQ_RUN_CURRENT;
+ 162   2                  mcFocCtrl.State_Count = 120;
+ 163   2              }
+ 164   1      
+ 165   1          #elif (EstimateAlgorithm == PLL)
+                       mcFocCtrl.mcIqref = IQ_RUN_CURRENT;
+              
+C51 COMPILER V9.52.0.0   FOCTAILDECT                                                       04/16/2020 10:07:50 PAGE 4   
+
+                  #endif //end    EstimateAlgorithm
+ 169   1      
+ 170   1      
+ 171   1          /*estimate parameter set*/
+ 172   1          FOC_OMEKLPF = SPEED_KLPF;
+ 173   1          FOC_IDREF   = ID_RUN_CURRENT;     // D轴启动电流
+ 174   1          FOC_IQREF   = mcFocCtrl.mcIqref ;         // Q轴启动电流
+ 175   1          PI_UK       =   mcFocCtrl.mcIqref   ;
+ 176   1      
+ 177   1      
+ 178   1          mcState            = mcRun;
+ 179   1          mcFocCtrl.CtrlMode = 0;
+ 180   1      }
+ 181          
+ 182          /*---------------------------------------------------------------------------*/
+ 183          /* Name     :   void FOCTailWindTimeLimit(void)
+ 184          /* Input    :   NO
+ 185          /* Output   :   NO
+ 186          /* Description: FOC顺逆风检测的时间处理
+ 187          /*---------------------------------------------------------------------------*/
+ 188          void FOCTailWindTimeLimit(void)
+ 189          {
+ 190   1          if(mcState == mcTailWind)
+ 191   1          {
+ 192   2              //1Hz Min
+ 193   2              if(TailWindDetect.SpeedCountTimer < TailWind_Time)                      // SpeedCountTimer-计算�
+             -��间间隔
+ 194   2              {
+ 195   3                  TailWindDetect.SpeedCountTimer++;
+ 196   3              }
+ 197   2              else
+ 198   2              {
+ 199   3                  TailWindDetect.TailWindSpeed       = 0;                             //速度为0
+ 200   3                  TailWindDetect.SpeedCountTimer     = 0;
+ 201   3                  TailWindDetect.SpeedOverFlowStatus = 1;                             // 转速计数溢出标�
+             -�
+ 202   3              }
+ 203   2          }
+ 204   1      }
+ 205           /*---------------------------------------------------------------------------*/
+ 206          /* Name     :   void TailWindDealwith(void)
+ 207          /* Input    :   NO
+ 208          /* Output   :   NO
+ 209          /* Description: 顺风逆风参数配置函数
+ 210          /*---------------------------------------------------------------------------*/
+ 211          void FOCTailWindDealwith(void)
+ 212          {
+ 213   1          /*********PLL或SMO**********/
+ 214   1          #if (EstimateAlgorithm == SMO)
+ 215   1               SMO_TailWindDealwith();
+ 216   1      
+ 217   1          #elif (EstimateAlgorithm == PLL)
+                       PLL_TailWindDealwith();
+              
+                  #endif //end    EstimateAlgorithm
+ 221   1      }
+ 222          
+ 223          void SMO_TailWindDealwith(void)
+ 224          {
+ 225   1          //电机状态为正转且转速计数溢出时；或1-3状态抖动次数大于2次时，认为静止
+ 226   1          if(((TailWindDetect.MotorDir == CW) && (TailWindDetect.SpeedOverFlowStatus))||(TailWindDetect.ShakeTim
+             -es > 2))
+C51 COMPILER V9.52.0.0   FOCTAILDECT                                                       04/16/2020 10:07:50 PAGE 5   
+
+ 227   1          {
+ 228   2              MOE = 0;
+ 229   2              SetBit(DRV_CR, FOCEN, 0);   //关闭FOC
+ 230   2              mcState                           = mcPosiCheck;
+ 231   2              McStaSet.SetFlag.PosiCheckSetFlag = 0;
+ 232   2              mcFocCtrl.mcPosCheckAngle         = 0xffff;         // 角度赋初值
+ 233   2          }
+ 234   1          else if((TailWindDetect.MotorDir == CCW) && (TailWindDetect.SpeedStoreNum > 2))//||((TailWindDetect.Mo
+             -torDir == CW)&&(TailWindDetect.TailWindSpeed>TailWindStartMinSpeed)))
+ 235   1          {
+ 236   2              if(TailWindDetect.TailWindSpeed < 130)
+ 237   2              {
+ 238   3                  mcFocCtrl.mcIqref       = IQ_Start_CURRENT + I_Value(0.5);       // Q轴启动电流
+ 239   3                  TailWindDetect.AntiFlag = 1;
+ 240   3              }
+ 241   2              else if(TailWindDetect.TailWindSpeed < 300)
+ 242   2              {
+ 243   3                  mcFocCtrl.mcIqref       = IQ_Start_CURRENT + I_Value(1.2);       // Q轴启动电流
+ 244   3                  TailWindDetect.AntiFlag = 2;
+ 245   3              }
+ 246   2              else if(TailWindDetect.TailWindSpeed < 500)
+ 247   2              {
+ 248   3                  mcFocCtrl.mcIqref       = IQ_Start_CURRENT + I_Value(2.0);       // Q轴启动电流
+ 249   3                  TailWindDetect.AntiFlag = 3;
+ 250   3              }
+ 251   2              else
+ 252   2              {
+ 253   3                  mcFocCtrl.mcIqref       = IQ_Start_CURRENT + I_Value(2.0);       // Q轴启动电流
+ 254   3                  TailWindDetect.AntiFlag = 4;
+ 255   3              }
+ 256   2      
+ 257   2              FOC_DQKP              = DQKP;
+ 258   2              FOC_DQKI              = DQKI;
+ 259   2      
+ 260   2              FOC_DMAX              = DOUTMAX;
+ 261   2              FOC_DMIN              = DOUTMIN;
+ 262   2              FOC_QMAX              = QOUTMAX;
+ 263   2              FOC_QMIN              = QOUTMIN;
+ 264   2              FOC_EK2               = OBS_K2T_SMO;
+ 265   2      
+ 266   2              FOC_IQREF             = mcFocCtrl.mcIqref;
+ 267   2              mcFocCtrl.State_Count = 120;
+ 268   2              FOC_EKP               = OBSW_KP_GAIN;
+ 269   2              FOC_EKI               = OBSW_KI_GAIN;
+ 270   2      
+ 271   2              FOC_IDREF             = 0;
+ 272   2              mcState               = mcRun;
+ 273   2              mcFocCtrl.CtrlMode    = 0;
+ 274   2      
+ 275   2          }
+ 276   1          else if(TailWindDetect.MotorDir == CW)
+ 277   1          {
+ 278   2              //超过检测次数TailWindDetect.SpeedStoreNum切转速TailWindStartMinSpeed以上时直接顺�
+             -�启动
+ 279   2              if((TailWindDetect.TailWindSpeed > TailWindStartMinSpeed) && (TailWindDetect.SpeedStoreNum >= 2))
+ 280   2              {
+ 281   3                  FOCCloseLoopStart();
+ 282   3              }
+ 283   2          }
+ 284   1      }
+ 285          
+ 286          void PLL_TailWindDealwith(void)
+C51 COMPILER V9.52.0.0   FOCTAILDECT                                                       04/16/2020 10:07:50 PAGE 6   
+
+ 287          {
+ 288   1          //电机状态为正转且转速计数溢出时；或1-3状态抖动次数大于2次时，认为静止
+ 289   1          if(((TailWindDetect.MotorDir == CW) && (TailWindDetect.SpeedOverFlowStatus)) || (TailWindDetect.ShakeT
+             -imes > 2))
+ 290   1          {
+ 291   2              MOE = 0;
+ 292   2              SetBit(DRV_CR, FOCEN, 0);   //关闭FOC
+ 293   2              mcState                           = mcPosiCheck;
+ 294   2              McStaSet.SetFlag.PosiCheckSetFlag = 0;
+ 295   2              mcFocCtrl.mcPosCheckAngle         = 0xffff;         // 角度赋初值
+ 296   2      
+ 297   2          }
+ 298   1          else if((TailWindDetect.MotorDir == CCW) && (TailWindDetect.TailWindSpeed > 50) && (TailWindDetect.Spe
+             -edStoreNum >= 2))// 当电机反转时，根据不同转速设置电流，并跳入mcPllTect状态。
+ 299   1          {
+ 300   2              if(TailWindDetect.TailWindSpeed < 130)
+ 301   2              {
+ 302   3                  FOC_IQREF               = I_Value(-0.1);
+ 303   3                  mcFocCtrl.mcIqref       = IQ_Start_CURRENT + I_Value(0.5);         // Q轴启动电流
+ 304   3                  TailWindDetect.AntiFlag = 1;
+ 305   3              }
+ 306   2              else if(TailWindDetect.TailWindSpeed < 380)
+ 307   2              {
+ 308   3                  FOC_IQREF               = I_Value(-0.4);
+ 309   3                  mcFocCtrl.mcIqref       = IQ_Start_CURRENT + I_Value(0.5);         // Q轴启动电流
+ 310   3                  TailWindDetect.AntiFlag = 2;
+ 311   3              }
+ 312   2              else if(TailWindDetect.TailWindSpeed < 500)
+ 313   2              {
+ 314   3                  FOC_IQREF               = I_Value(-0.6);
+ 315   3                  mcFocCtrl.mcIqref       = IQ_Start_CURRENT + I_Value(0.8);         // Q轴启动电流
+ 316   3                  TailWindDetect.AntiFlag = 3;
+ 317   3              }
+ 318   2              else
+ 319   2              {
+ 320   3                      FOC_IQREF = I_Value(-0.7);
+ 321   3                      mcFocCtrl.mcIqref= IQ_Start_CURRENT + I_Value(0.8);         // Q轴启动电流
+ 322   3                      TailWindDetect.AntiFlag             = 4;
+ 323   3              }
+ 324   2              TailWindDetect.PLLFlag = 1;
+ 325   2              mcState                = mcPllTect;
+ 326   2          }
+ 327   1          else if(TailWindDetect.MotorDir == CW)//
+ 328   1          {
+ 329   2              //超过检测次数TailWindDetect.SpeedStoreNum,且转速大于TailWindStartMinSpeed，则直接�
+             -��风启动
+ 330   2              if((TailWindDetect.TailWindSpeed > TailWindStartMinSpeed) && (TailWindDetect.SpeedStoreNum >= 2))
+ 331   2              {
+ 332   3                  FOCCloseLoopStart();
+ 333   3              }
+ 334   2          }
+ 335   1      
+ 336   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1331    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     25    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+C51 COMPILER V9.52.0.0   FOCTAILDECT                                                       04/16/2020 10:07:50 PAGE 7   
+
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

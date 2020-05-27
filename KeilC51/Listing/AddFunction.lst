@@ -1,0 +1,1510 @@
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE ADDFUNCTION
+OBJECT MODULE PLACED IN .\Output\AddFunction.obj
+COMPILER INVOKED BY: D:\Keil4\C51\BIN\C51.EXE ..\User\Source\Application\AddFunction.c LARGE OMF2 WARNINGLEVEL(0) OPTIMI
+                    -ZE(5,SPEED) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\AddFunction.l
+                    -st) TABS(2) OBJECT(.\Output\AddFunction.obj)
+
+line level    source
+
+   1          /**************************** (C) COPYRIGHT 2017 Fortiortech shenzhen *****************************
+   2          * File Name          : AddFunction.c
+   3          * Author             : Fortiortech  Appliction Team
+   4          * Version            : V1.0
+   5          * Date               : 2017-12-26
+   6          * Description        : This file contains all the add function used for Motor Control.
+   7          ***************************************************************************************************
+   8          * All Rights Reserved
+   9          **************************************************************************************************/
+  10          
+  11          
+  12          /* Includes -------------------------------------------------------------------------------------*/
+  13          // #include <AddFunction.h>
+  14          #include <FU68xx_2.h>
+  15          #include <Myproject.h>
+  16          
+  17          /* Private variables ---------------------------------------------------------*/
+  18          FaultStateType             mcFaultSource;
+  19          PWMINPUTCAL        idata   mcPwmInput;
+  20          FaultVarible       idata   mcFaultDect;
+  21          MotorRSDTypeDef    idata   RSDDetect;
+  22          CurrentVarible     idata   mcCurVarible;
+  23          ProtectVarible     idata   mcProtectTime;
+  24          
+  25          OUTLOOP            xdata   SpeedPICtrl;
+  26          FOCCTRL            xdata   mcFocCtrl;
+  27          ADCSample          xdata   AdcSampleValue;
+  28          ONVarible          xdata   ONOFFTest;
+  29          MCLedDisplay       xdata   mcLedDisplay;
+  30          MCRAMP             xdata   mcSpeedRamp;
+  31          SLEEPMODE          xdata   SleepSet;
+  32          MotorFRTypeDef     xdata   mcFRState;
+  33          int16              xdata   VSP;
+  34          
+  35          const int16  PowerGiven[10] ={0,500,1000,2200,2900,4300,5900,7300,7900,8550};
+  36          
+  37          extern char Flag_Key1Value;
+  38          extern char Flag_Key2Value;
+  39          
+  40          uint8 low_flag = 0;
+  41          
+  42          /*---------------------------------------------------------------------------*/
+  43          /* Name     :   void OutLoopParameterSet(void)
+  44          /* Input    :   NO
+  45          /* Output   :   NO
+  46          /* Description: 
+  47          /*---------------------------------------------------------------------------*/
+  48          void OutLoopParameterSet(void)
+  49          {
+  50   1        memset(&SpeedPICtrl,0, sizeof(OUTLOOP));                                // SpeedControl clear
+  51   1      
+  52   1        mcFocCtrl.SpeedLoopTime = SPEED_LOOP_TIME;
+  53   1        mcFocCtrl.SpeedRampTime = SPEEDRAMPTIME;
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 2   
+
+  54   1        
+  55   1        mcSpeedRamp.IncValue    = SPEEDRAMPSTARTINC;
+  56   1        mcSpeedRamp.DecValue    = SPEEDRAMPSTARTDEC;
+  57   1      
+  58   1        SpeedPICtrl.ExtKP       = SKP;
+  59   1        SpeedPICtrl.ExtKI       = SKI;
+  60   1        SpeedPICtrl.ExtOutMax   = SOUTMAX;
+  61   1        SpeedPICtrl.ExtOutMin   = SOUTMIN;
+  62   1        
+  63   1        PI_KP     = SpeedPICtrl.ExtKP;
+  64   1        PI_KI     = SpeedPICtrl.ExtKI;
+  65   1        PI_UKMAX  = SpeedPICtrl.ExtOutMax;
+  66   1        PI_UKMIN  = SpeedPICtrl.ExtOutMin;
+  67   1        
+  68   1      //  PI_UK     = I_Value(0.4) ;
+  69   1        FOC_IQREF = I_Value(0.07);
+  70   1        
+  71   1        PI_UK     = FOC_IQREF ; 
+  72   1      }
+  73          /*---------------------------------------------------------------------------*/
+  74          /* Name   : int16 KLPF_VALUE(int16 INVlaue, int16 OutLastValue)
+  75          /* Input  : INVlaue，OutLastValue
+  76          /* Output : int16的变量
+  77          /* Description: 滤波函数,用乘法器做的
+  78          /*---------------------------------------------------------------------------*/
+  79          int16 KLPF_VALUE(int16 INVlaue, int16 OutLastValue)
+  80          {
+  81   1        int16 Result = 0;
+  82   1        MDU_MA = (INVlaue-OutLastValue);
+  83   1        MDU_MB = (int16)480;                    /*写被乘数和乘数*/
+  84   1      
+  85   1        Result = MDU_MB;
+  86   1        Result += OutLastValue;
+  87   1        return(Result);
+  88   1      }
+  89          
+  90          /*---------------------------------------------------------------------------*/
+  91          /* Name   : void FaultProcess(void)
+  92          /* Input  : NO
+  93          /* Output : NO
+  94          /* Description: 保护处理函数，关闭FOC输出，同时将状态变为mcFault
+  95          /*---------------------------------------------------------------------------*/
+  96          void FaultProcess(void)
+  97          {
+  98   1        MOE     = 0;
+  99   1        ClrBit(DRV_CR, FOCEN);  //关闭FOC
+ 100   1        mcState = mcFault;
+ 101   1      
+ 102   1      }
+ 103          
+ 104          /*---------------------------------------------------------------------------*/
+ 105          /* Name   : int16 Abs_F16(int16 value)
+ 106          /* Input  : value
+ 107          /* Output : int16
+ 108          /* Description: 对变量取16位的绝对值
+ 109          /*---------------------------------------------------------------------------*/
+ 110          uint16 Abs_F16(int16 value)
+ 111          {
+ 112   1        if(value < 0)
+ 113   1        {
+ 114   2          return (- value);
+ 115   2        }
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 3   
+
+ 116   1        else
+ 117   1        {
+ 118   2          return (value);
+ 119   2        }
+ 120   1      }
+ 121          /*---------------------------------------------------------------------------*/
+ 122          /* Name   : int32 Abs_F32(int32 value)
+ 123          /* Input  : value
+ 124          /* Output : int16
+ 125          /* Description: 对变量取16位的绝对值
+ 126          /*---------------------------------------------------------------------------*/
+ 127          uint32 Abs_F32(int32 value)
+ 128          {
+ 129   1        if(value < 0)
+ 130   1        {
+ 131   2          return (- value);
+ 132   2        }
+ 133   1        else
+ 134   1        {
+ 135   2          return (value);
+ 136   2        }
+ 137   1      }
+ 138          /*---------------------------------------------------------------------------*/
+ 139          /* Name   : void APP_DIV(void)
+ 140          /* Input  : void
+ 141          /* Output : void
+ 142          /* Description: 将所有用到除法的地方，放在同一个中断，以避免中断串扰
+ 143          /*---------------------------------------------------------------------------*/
+ 144          void APP_DIV(void)
+ 145          {
+ 146   1          if( mcPwmInput.PWMDivFlag==1)  //启动除法器，避免与过调值中的除法冲突
+ 147   1          {
+ 148   2             mcPwmInput.PWMDuty = MDU_DIV_IDATA_U32(&mcPwmInput.pwm.PWMCompareAMP, &mcPwmInput.PWMARRUpdate);
+ 149   2             mcPwmInput.PWMDivFlag=0;
+ 150   2          }
+ 151   1          if( mcFocCtrl.ESDIVFlag==1)  //启动除法器，避免与过调值中的除法冲突
+ 152   1          {
+ 153   2             mcFocCtrl.SQUSpeedDIVEs = MDU_DIV_XDATA_U32(&mcFocCtrl.SQUSysSpeed,&mcFocCtrl.EsValue);
+ 154   2             mcFocCtrl.ESDIVFlag=0;
+ 155   2          }
+ 156   1      }
+ 157          /*---------------------------------------------------------------------------*/
+ 158          /* Name   : void PWMInputCapture(void)
+ 159          /* Input  : NO
+ 160          /* Output : NO
+ 161          /* Description: 输入PWM处理
+ 162          /*---------------------------------------------------------------------------*/
+ 163          void PWMInputCapture(void)
+ 164          {
+ 165   1        uint16 MotorControlVSP;
+ 166   1      
+ 167   1         if(mcPwmInput.PWMUpdateFlag==1)  // 有新的duty更新
+ 168   1         {
+ 169   2            if((Abs_F32(mcPwmInput.PWMCompare-mcPwmInput.PWMCompareOld)<50)// 两次比较值相近，减少读�
+             -��率
+ 170   2              &&(Abs_F32(mcPwmInput.PWMARROld-mcPwmInput.PWMARR)<50)// 两次周期值相近，减少读错率
+ 171   2      //        &&((100<mcPwmInput.PWMARR)&&(mcPwmInput.PWMARR<6000))// 周期值在一定范围内才认为有�
+             -��，即一定频率范围
+ 172   2              &&(mcPwmInput.PWMDivFlag==0))
+ 173   2              {
+ 174   3                mcPwmInput.PWMFlag=1;                               // PWMFlag置1期间，不读取TIM3__DR和T
+             -IM3__ARR;，防止出错
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 4   
+
+ 175   3                mcPwmInput.pwm.PWMCompareUpdate[0]=(mcPwmInput.PWMCompare>>1);// 对其乘以32768
+ 176   3                mcPwmInput.PWMARRUpdate=mcPwmInput.PWMARR;
+ 177   3                mcPwmInput.PWMDivFlag=1;                            // 启动除法
+ 178   3                mcPwmInput.PWMFlag=0;
+ 179   3              }
+ 180   2             if(mcPwmInput.PWMDivFlag==0)
+ 181   2              {
+ 182   3                if(mcPwmInput.PWMcnt<3)//2次求平均值
+ 183   3                {
+ 184   4                  mcPwmInput.PWMcnt++;
+ 185   4                  mcPwmInput.PWMVSum +=mcPwmInput.PWMDuty;
+ 186   4                }
+ 187   3                else
+ 188   3                {
+ 189   4                  MotorControlVSP= (mcPwmInput.PWMVSum >>1);//注意其有一个右移与前面的比较值标�
+             -�化有关
+ 190   4                  mcPwmInput.PWMVSum=0;
+ 191   4                  mcPwmInput.PWMcnt =0;
+ 192   4                }
+ 193   3                 MotorControlVSP=mcPwmInput.PWMDuty;
+ 194   3               if((MotorControlVSP > ONPWMDuty)&&(MotorControlVSP <=(OFFPWMDutyHigh+1)))
+ 195   3                {
+ 196   4                  mcSpeedRamp.FlagONOFF = 1;
+ 197   4                }
+ 198   3               else if(MotorControlVSP < OFFPWMDuty)//||(MotorControlVSP >= OFFPWMDutyHigh))
+ 199   3                {
+ 200   4                  mcSpeedRamp.FlagONOFF = 0;
+ 201   4                }
+ 202   3      
+ 203   3                //转速曲线计算
+ 204   3                if(mcSpeedRamp.FlagONOFF==1)
+ 205   3                {
+ 206   4                  if(MotorControlVSP <= MINPWMDuty)
+ 207   4                  {
+ 208   5                    mcSpeedRamp.TargetValue = Motor_Min_Speed;
+ 209   5                  }
+ 210   4                  else if(MotorControlVSP < MAXPWMDuty)
+ 211   4                  {
+ 212   5                    mcSpeedRamp.TargetValue = Motor_Min_Speed + SPEED_K*(MotorControlVSP-MINPWMDuty);
+ 213   5                  }
+ 214   4                  else
+ 215   4                  {
+ 216   5                    mcSpeedRamp.TargetValue = Motor_Max_Speed;
+ 217   5                  }
+ 218   4                }
+ 219   3                else
+ 220   3                {
+ 221   4                  mcSpeedRamp.TargetValue =0;
+ 222   4                }
+ 223   3              }
+ 224   2      
+ 225   2            mcPwmInput.PWMUpdateFlag =0;
+ 226   2            mcPwmInput.PWMCompareOld=mcPwmInput.PWMCompare;//将此次比较值赋值给上次比较值
+ 227   2            mcPwmInput.PWMARROld=mcPwmInput.PWMARR;//将此次周期值赋值给上次周期值
+ 228   2          }
+ 229   1      }
+ 230          /*****************************************************************************
+ 231           * Function:     void Fault_OverVoltage(mcFaultVarible *h_Fault)
+ 232           * Description:  过压欠压保护函数：程序每5ms判断一次，母线电压大于过压保护值�
+             -�，计数器加一，计数器值超过20次，判断为过压保护，关闭输出;反之，计数器慢慢减
+ 233                           同理，欠压保护。
+ 234                           电机过欠压保护状态下，母线电压恢复到欠压恢复值以上，过压恢复
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 5   
+
+             -值以下时，计数器加一，超过200次后，恢复。根据档位信息来决定恢复到哪个状态。
+ 235           * Parameter:    mcFaultVarible *h_Fault
+ 236           * Return:       no
+ 237           *****************************************************************************/
+ 238          void Fault_OverUnderVoltage(FaultVarible *h_Fault)
+ 239          {
+ 240   1        //过压保护
+ 241   1          if(mcFaultSource == FaultNoSource)//程序无其他保护下
+ 242   1          {
+ 243   2              if(mcFocCtrl.mcDcbusFlt > OVER_PROTECT_VALUE)  //母线电压大于过压保护值时，计数，超�
+             -�20次，判断为过压保护，关闭输出;反之，计数器慢慢减
+ 244   2              {
+ 245   3                h_Fault->OverVoltDetecCnt++;
+ 246   3                if(h_Fault->OverVoltDetecCnt > 20)//检测100ms
+ 247   3                {
+ 248   4                  h_Fault->OverVoltDetecCnt = 0;
+ 249   4                  mcFaultSource=FaultOverVoltage;
+ 250   4                  FaultProcess();
+ 251   4                }
+ 252   3              }
+ 253   2              else
+ 254   2              {
+ 255   3                if(h_Fault->OverVoltDetecCnt>0)
+ 256   3                {
+ 257   4                  h_Fault->OverVoltDetecCnt--;
+ 258   4                }
+ 259   3              }
+ 260   2      
+ 261   2              //低电关闭LED
+ 262   2              
+ 263   2              if(mcFocCtrl.mcDcbusFlt < CLOSE_LED_VALUE)
+ 264   2              {
+ 265   3                  h_Fault->CloseLedCnt++;
+ 266   3                  if(h_Fault->CloseLedCnt > 30)
+ 267   3                  {
+ 268   4                      h_Fault->CloseLedCnt = 0;
+ 269   4                      D1 = 1; D2 = 1; D3 = 1; D4 = 1;  D5 = 1; D6 = 1;
+ 270   4                      low_flag = 1;
+ 271   4                  }
+ 272   3              }
+ 273   2              else
+ 274   2              {
+ 275   3                  if(h_Fault->CloseLedCnt > 0)
+ 276   3                  {
+ 277   4                      h_Fault->CloseLedCnt--;
+ 278   4                  }
+ 279   3                  else
+ 280   3                  {
+ 281   4                      if(low_flag)
+ 282   4                      {
+ 283   5                        low_flag = 0;
+ 284   5                        KS.ChangeKeyFlg = 1;
+ 285   5                      }
+ 286   4                  }
+ 287   3              } 
+ 288   2              
+ 289   2              
+ 290   2            //欠压保护
+ 291   2              if(mcFocCtrl.mcDcbusFlt< UNDER_PROTECT_VALUE)
+ 292   2              {
+ 293   3                h_Fault->UnderVoltDetecCnt++;
+ 294   3      
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 6   
+
+ 295   3                if(h_Fault->UnderVoltDetecCnt > 30)//检测100ms
+ 296   3                {
+ 297   4                  h_Fault->UnderVoltDetecCnt = 0;
+ 298   4                  h_Fault->VoltDetecBraketCount = 120;
+ 299   4                  mcFaultSource=FaultUnderVoltage;
+ 300   4                  FaultProcess();
+ 301   4      
+ 302   4                  Flag_Key1Value = 0;
+ 303   4                  Flag_Key2Value = 0;
+ 304   4                  
+ 305   4                  if(KS.FlashWriteOnetimes == 0)
+ 306   4                  {
+ 307   5                              
+ 308   5                    Rom.WriteValue = KS.KeyValuetotal;   //档位存储
+ 309   5                    Rom.ReadValue = Flash_GetAddress();     //读
+ 310   5                    if((Rom.ReadValue == 0x11)||(Rom.ReadValue == 0x21) ||(Rom.ReadValue == 0x41) ||(Rom.ReadValue == 0
+             -x12) ||(Rom.ReadValue == 0x22)
+ 311   5                    ||(Rom.ReadValue == 0x42)||(Rom.ReadValue == 0x14)||(Rom.ReadValue== 0x24)||(Rom.ReadValue == 0x44)
+             -||(Rom.ReadValue == 0x18)
+ 312   5                    ||(Rom.ReadValue == 0x28)||(Rom.ReadValue == 0x48))
+ 313   5                    {
+ 314   6                      EA = 0;
+ 315   6                      Flash_ErasePageRom();                  //擦
+ 316   6                      Flash_KeyWriteValue((Rom.WriteValue));  //写 
+ 317   6                      EA = 1;
+ 318   6                      KS.FlashWriteOnetimes = 1;
+ 319   6                    }
+ 320   5      //              else
+ 321   5      //              {
+ 322   5      //                Flash_ErasePageRom();                  //擦
+ 323   5      //                Flash_KeyWriteValue((0x21));  //写 
+ 324   5      //                EA = 1;
+ 325   5      //              }
+ 326   5                  }
+ 327   4                }
+ 328   3              }
+ 329   2              else
+ 330   2              {
+ 331   3                if(h_Fault->UnderVoltDetecCnt>0)
+ 332   3                {
+ 333   4                  h_Fault->UnderVoltDetecCnt--;
+ 334   4                }
+ 335   3              }
+ 336   2          }
+ 337   1          if(((mcFaultSource==FaultOverVoltage)||(mcFaultSource==FaultUnderVoltage))&&(h_Fault->VoltDetecBraketCou
+             -nt >0))
+ 338   1          {  
+ 339   2            h_Fault->VoltDetecBraketCount--;
+ 340   2            if((h_Fault->VoltDetecBraketCount >= 60))
+ 341   2            {
+ 342   3                DRV_DR = 0.1*DRV_ARR;                   //下桥臂10% duty
+ 343   3                ClrBit(DRV_CR, OCS);                    //OCS = 0, PWM来源DRV_COMR
+ 344   3                DRV_CMR |= 0x03;                         // UVW相下桥输出
+ 345   3                SetBit(DRV_CR, DRVEN);                    /*DRV计数器使能，0-禁止，1-使能*/
+ 346   3                MOE = 1;  
+ 347   3      
+ 348   3            }
+ 349   2            else if((h_Fault->VoltDetecBraketCount <= 40))
+ 350   2            {
+ 351   3              MOE = 0;
+ 352   3              DRV_OUT = 0x00;
+ 353   3              //D1 = 1; D2 = 1; D3 = 1; D4 = 1;  D5 = 1; D6 = 1;        
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 7   
+
+ 354   3            }
+ 355   2            else
+ 356   2            {
+ 357   3              h_Fault->VoltDetecBraketCount = 60;
+ 358   3            }
+ 359   2            
+ 360   2      //      if(h_Fault->mcVoltDetecBraketCount == 1)
+ 361   2      //      {
+ 362   2      //        FaultProcess();
+ 363   2      //      }
+ 364   2          }
+ 365   1      
+ 366   1          /*******过压欠压保护恢复*********/
+ 367   1          if((mcState == mcFault) &&((mcFaultSource==FaultUnderVoltage)||(mcFaultSource==FaultOverVoltage)))
+ 368   1          {
+ 369   2      //      if((mcFocCtrl.mcDcbusFlt< OVER_RECOVER_VALUE)&&(mcFocCtrl.mcDcbusFlt> UNDER_RECOVER_VALUE))
+ 370   2      //      {
+ 371   2      //        h_Fault->VoltRecoverCnt++;
+ 372   2      //        if(h_Fault->VoltRecoverCnt>200)//连续检测1s，若正常则恢复
+ 373   2      //        {
+ 374   2      //          mcState = mcReady;
+ 375   2      //          mcFaultSource=FaultNoSource;
+ 376   2      //          h_Fault->VoltRecoverCnt = 0;
+ 377   2      //        }
+ 378   2      //      }
+ 379   2      //      else
+ 380   2      //      {
+ 381   2      //        h_Fault->VoltRecoverCnt = 0;
+ 382   2      //      }
+ 383   2         }
+ 384   1      }
+ 385          
+ 386          
+ 387          /*****************************************************************************
+ 388           * Function:     void Fault_Power(mcFaultVarible *h_Fault)
+ 389           * Description:  功率保护函数
+ 390           * Parameter:    mcFaultVarible *h_Fault
+ 391           * Return:       no
+ 392           *****************************************************************************/
+ 393          void Fault_Power(FaultVarible *h_Fault)
+ 394          {
+ 395   1      
+ 396   1          if(mcFaultSource == FaultNoSource)//程序无其他保护下
+ 397   1          {
+ 398   2              if(mcFocCtrl.Powerlpf > PowerLimit)  //功率大于保护值时计数，超过20次，判断为过载�
+             -��护，关闭输出;反之，计数器慢慢减
+ 399   2              {
+ 400   3                h_Fault->OverPowerDetecCnt++;
+ 401   3                if(h_Fault->OverPowerDetecCnt > 20)
+ 402   3                {
+ 403   4                  h_Fault->OverPowerDetecCnt = 0;
+ 404   4                  mcFaultSource=FaultOverPower;
+ 405   4                  FaultProcess();
+ 406   4                }
+ 407   3              }
+ 408   2              else
+ 409   2              {
+ 410   3                if(h_Fault->OverPowerDetecCnt>0)
+ 411   3                {
+ 412   4                  h_Fault->OverPowerDetecCnt--;
+ 413   4                }
+ 414   3              }
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 8   
+
+ 415   2          }
+ 416   1      
+ 417   1        }
+ 418          
+ 419          
+ 420          /*****************************************************************************
+ 421           * Function:     void Fault_Overcurrent(CurrentVarible *h_Cur)
+ 422           * Description:  电机运行或者启动时，当三相中某一相最大值大于OverCurrentValue，则O
+             -verCurCnt加1。
+ 423                           连续累加3次，判断为软件过流保护。执行时间约30.4us。
+ 424           * Parameter:    mcFaultVarible *h_Fault
+ 425           * Return:       no
+ 426           *****************************************************************************/
+ 427          void Fault_Overcurrent(CurrentVarible *h_Cur)
+ 428          {
+ 429   1        if((mcState == mcRun)||(mcState == mcStart))            // check over current in rum and open mode
+ 430   1        {
+ 431   2      
+ 432   2          h_Cur->Abs_ia = Abs_F16(FOC__IA);
+ 433   2          h_Cur->Abs_ib = Abs_F16(FOC__IB);
+ 434   2          h_Cur->Abs_ic = Abs_F16(FOC__IC);
+ 435   2          if(h_Cur->Abs_ia> h_Cur->Max_ia)                      // 此部分既用于软件过流保护，又用�
+             -�缺相保护
+ 436   2          {
+ 437   3             h_Cur->Max_ia = h_Cur->Abs_ia;
+ 438   3          }
+ 439   2          if(h_Cur->Abs_ib > h_Cur->Max_ib)
+ 440   2          {
+ 441   3             h_Cur->Max_ib = h_Cur->Abs_ib;
+ 442   3          }
+ 443   2          if(h_Cur->Abs_ic > h_Cur->Max_ic)
+ 444   2          {
+ 445   3             h_Cur->Max_ic = h_Cur->Abs_ic;
+ 446   3          }
+ 447   2      
+ 448   2          if((h_Cur->Max_ia>=OverSoftCurrentValue)||(h_Cur->Max_ib>=OverSoftCurrentValue)||(h_Cur->Max_ic>=OverSof
+             -tCurrentValue))
+ 449   2          {
+ 450   3            h_Cur->OverCurCnt++;
+ 451   3            if(h_Cur->OverCurCnt>=3)
+ 452   3            {
+ 453   4              GP36=~GP36;
+ 454   4              h_Cur->Max_ia=0;
+ 455   4              h_Cur->Max_ib=0;
+ 456   4              h_Cur->Max_ic=0;
+ 457   4              h_Cur->OverCurCnt=0;
+ 458   4              mcFaultSource=FaultSoftOVCurrent;
+ 459   4              FaultProcess();
+ 460   4            }
+ 461   3          }
+ 462   2          else
+ 463   2          {
+ 464   3            if(h_Cur->OverCurCnt>0)
+ 465   3            {
+ 466   4              h_Cur->OverCurCnt--;
+ 467   4            }
+ 468   3          }
+ 469   2        }
+ 470   1      }
+ 471          
+ 472          
+ 473          /*****************************************************************************
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 9   
+
+ 474           * Function:     void Fault_OverCurrentRecover(mcFaultVarible *h_Fault)
+ 475           * Description:  软硬件过流保护恢复
+ 476           * Parameter:    mcFaultVarible *h_Fault
+ 477           * Return:       no
+ 478           *****************************************************************************/
+ 479          void Fault_OverCurrentRecover(FaultVarible *h_Fault)
+ 480          {
+ 481   1        if((mcState == mcFault)&&((mcFaultSource==FaultSoftOVCurrent)||(mcFaultSource==FaultHardOVCurrent))&&(mcP
+             -rotectTime.CurrentPretectTimes<5))
+ 482   1        {
+ 483   2          h_Fault->CurrentRecoverCnt++;
+ 484   2          if(h_Fault->CurrentRecoverCnt>=OverCurrentRecoverTime)//1000*5=5s
+ 485   2          {
+ 486   3            h_Fault->CurrentRecoverCnt=0;
+ 487   3            mcProtectTime.CurrentPretectTimes++;
+ 488   3            mcState = mcReady;
+ 489   3            mcFaultSource=FaultNoSource;
+ 490   3          }
+ 491   2        }
+ 492   1      }
+ 493          
+ 494          /*****************************************************************************
+ 495           * Function:     void Fault_OverPowerRecover(mcFaultVarible *h_Fault)
+ 496           * Description:  功率保护恢复函数
+ 497           * Parameter:    mcFaultVarible *h_Fault
+ 498           * Return:       no
+ 499           *****************************************************************************/
+ 500          void Fault_OverPowerRecover(FaultVarible *h_Fault)
+ 501          {
+ 502   1        if((mcState == mcFault)&&(mcFaultSource==FaultOverPower)&&(mcProtectTime.PowerPretectTimes<5))
+ 503   1        {
+ 504   2          h_Fault->OverPowerDetecCnt++;
+ 505   2          if(h_Fault->OverPowerDetecCnt>=OverPowerRecoverTime)
+ 506   2          {
+ 507   3            h_Fault->OverPowerDetecCnt=0;
+ 508   3            mcProtectTime.PowerPretectTimes++;
+ 509   3            mcState = mcReady;
+ 510   3            mcFaultSource=FaultNoSource;
+ 511   3          }
+ 512   2        }
+ 513   1      }
+ 514          
+ 515          
+ 516          
+ 517          /*****************************************************************************
+ 518           * Function:     void Fault_Start(mcFaultVarible *h_Fault)
+ 519           * Description:  启动保护函数，电机运行状态下，电机在前5s估算转速达到堵转保护
+             -值或者5s后反电动势值太低(此方法未验证)
+ 520                            或4s内还在CtrlMode状态，即速度低于MOTOR_LOOP_RPM，程序判断为启动失�
+             -��，电机停机。
+ 521                            当程序判断为启动失败后，若重启次数少于或等于5次，程序立即进
+             -入校准状态，等待重启。
+ 522           * Parameter:    mcFaultVarible *h_Fault
+ 523           * Return:       no
+ 524           *****************************************************************************/
+ 525            void Fault_Start(FaultVarible *h_Fault)
+ 526            {
+ 527   1          /*******启动保护恢复*********/
+ 528   1      //    h_Fault->mcEsValue = FOC__ESQU;
+ 529   1      
+ 530   1          if(mcState == mcRun)
+ 531   1          {
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 10  
+
+ 532   2            //方法一，5s内速度大于最大速度，同时反电动势值低于一定值
+ 533   2            if(h_Fault->StartSpeedCnt<=1000)
+ 534   2            {
+ 535   3              h_Fault->StartSpeedCnt++;
+ 536   3              if((mcFocCtrl.SpeedFlt > Motor_Max_Speed)&&(mcFocCtrl.EsValue<50))
+ 537   3              {
+ 538   4                h_Fault->StartSpeedCnt = 0;
+ 539   4                mcFaultSource=FaultStart;
+ 540   4                FaultProcess();
+ 541   4                mcProtectTime.SecondStartTimes++;
+ 542   4                mcProtectTime.StartFlag  =  1;
+ 543   4              }
+ 544   3            }
+ 545   2           //方法二
+ 546   2            if(h_Fault->StartEsCnt<=1200)//前6s，等待1.5s后，开始判断Es，如果超过一定次数，则�
+             -��败
+ 547   2            {
+ 548   3              h_Fault->StartEsCnt++;
+ 549   3              h_Fault->StartDelay++;
+ 550   3              if(h_Fault->StartDelay>=300)        // 1.5s
+ 551   3              {
+ 552   4                 h_Fault->StartDelay=300;
+ 553   4                 if((mcFocCtrl.EsValue <20))//&&(mcFocCtrl.CtrlMode==0))
+ 554   4                  {
+ 555   5                    h_Fault->StartESCount++;
+ 556   5                    if(h_Fault->StartESCount>=50)     //50次Es小于设定值，启动失败
+ 557   5                    {
+ 558   6                      mcFaultSource=FaultStart;
+ 559   6                      FaultProcess();
+ 560   6                      mcProtectTime.SecondStartTimes++;
+ 561   6                      h_Fault->StartDelay=0;
+ 562   6                      h_Fault->StartESCount=0;
+ 563   6                      mcProtectTime.StartFlag  =  2;
+ 564   6                    }
+ 565   5                  }
+ 566   4                  else
+ 567   4                  {
+ 568   5                    if(h_Fault->StartESCount>0)
+ 569   5                      h_Fault->StartESCount--;
+ 570   5                  }
+ 571   4             }
+ 572   3           }
+ 573   2           else
+ 574   2           {
+ 575   3             h_Fault->StartESCount=0;
+ 576   3           }
+ 577   2           
+ 578   2           
+ 579   2            //方法三，长时间在CtrlMode=0状态
+ 580   2            if(mcFocCtrl.CtrlMode==0)         
+ 581   2            {
+ 582   3              h_Fault->StartFocmode++;
+ 583   3              if(h_Fault->StartFocmode>=8000)   //在MODE0模式超过8s起动失败
+ 584   3              {
+ 585   4                h_Fault->StartFocmode=0;
+ 586   4                mcFaultSource=FaultStart;
+ 587   4                FaultProcess();
+ 588   4                mcProtectTime.SecondStartTimes++;
+ 589   4                mcProtectTime.StartFlag  =  3;
+ 590   4              }
+ 591   3            }
+ 592   2            
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 11  
+
+ 593   2          }
+ 594   1          
+ 595   1          //起动保护恢复
+ 596   1       #if (!StartONOFF_Enable)    //起停测试时屏蔽起动保护恢复
+ 597   1          {
+ 598   2           if((mcFaultSource==FaultStart)&&(mcState == mcFault)&&(mcProtectTime.SecondStartTimes<=StartProtectRest
+             -artTimes))
+ 599   2           {
+ 600   3             
+ 601   3             h_Fault->StartRecoverDelayCnt++;
+ 602   3             if(h_Fault->StartRecoverDelayCnt > StartRecoverDelayTimes)   //启动保护延时恢复时间
+ 603   3             {
+ 604   4                h_Fault->StartRecoverDelayCnt = 0;
+ 605   4                mcFaultSource=FaultNoSource;
+ 606   4                mcState = mcInit;
+ 607   4             }
+ 608   3           }
+ 609   2          }
+ 610   1        #endif
+ 611   1          
+ 612   1        }
+ 613          
+ 614           
+ 615          
+ 616          
+ 617           /*****************************************************************************
+ 618           * Function:     void Fault_Stall(mcFaultVarible *h_Fault)
+ 619           * Description:  堵转保护函数，有三种保护方式，
+ 620                           第一种，
+ 621                           第二种，电机运行状态下，延迟4s判断，估算速度绝对值超过堵转速�
+             -��连续5次；
+ 622                           第三种，电机运行状态下，当U,V两相电流绝对值大于堵转电流保护值
+             -连续6次；
+ 623                           当以上三种的任何一种保护触发时，电机停机，程序判断为堵转保护
+             -；
+ 624                           当堵转保护状态下，U相采集值低于堵转恢复值时，若堵转次数小于�
+             -�等于堵转重启次数8次，
+ 625                           程序延迟mcStallRecover重新启动，进行校准状态。
+ 626           * Parameter:    mcFaultVarible *h_Fault
+ 627           * Return:       no
+ 628           *****************************************************************************/
+ 629          //堵转保护
+ 630          void Fault_Stall(FaultVarible *h_Fault,CurrentVarible *h_Cur)
+ 631          {
+ 632   1      //  h_Fault->mcEsValue = FOC__ESQU;
+ 633   1        if(mcState == mcRun)
+ 634   1        {
+ 635   2          if(h_Fault->StallDelayCnt <=1000)// 启动后延时5s判断是否堵转保护
+ 636   2          {
+ 637   3            h_Fault->StallDelayCnt ++;
+ 638   3          }
+ 639   2          else
+ 640   2          {
+ 641   3            //method 1，当反电动势太小 或当 转速太大但反电动势却很小时进入保护
+ 642   3            if((&mcFocCtrl.EsValue< 20)||((FOC__EOME > _Q15(1200.0/MOTOR_SPEED_BASE))&&(mcFocCtrl.EsValue< 50)))
+ 643   3            {
+ 644   4              h_Fault->StallDectEs++;
+ 645   4              if(h_Fault->StallDectEs >= 50)   //判断满足条件达到设置次数，保护动作
+ 646   4              {
+ 647   5                h_Fault->StallDectEs=0;
+ 648   5                mcFaultSource=FaultStall;
+ 649   5                mcProtectTime.StallTimes++;        //堵转次数+1
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 12  
+
+ 650   5                FaultProcess();
+ 651   5                h_Fault->StallDelayCnt = 0;        //保护后重启开始重新计数，保持5S延迟
+ 652   5                mcProtectTime.StallFlag  =  1;
+ 653   5              }
+ 654   4            }
+ 655   3            else
+ 656   3            {
+ 657   4              if( h_Fault->StallDectEs>0)
+ 658   4                h_Fault->StallDectEs--;
+ 659   4            }
+ 660   3            
+ 661   3            //method 2，判断速度低于堵转最小值或者超过堵转最大值
+ 662   3            if((mcFocCtrl.SpeedFlt<Motor_Stall_Min_Speed)||(mcFocCtrl.SpeedFlt > Motor_Stall_Max_Speed))
+ 663   3            {
+ 664   4              h_Fault->StallDectSpeed++;
+ 665   4              if(h_Fault->StallDectSpeed >= 20)   //判断满足条件达到设置次数，保护动作
+ 666   4              {
+ 667   5                h_Fault->StallDectSpeed=0;
+ 668   5                mcFaultSource=FaultStall;
+ 669   5                mcProtectTime.StallTimes++;       //堵转次数+1
+ 670   5                FaultProcess();
+ 671   5                h_Fault->StallDelayCnt = 0;       //保护后重启开始重新计数，保持5S延迟
+ 672   5                mcProtectTime.StallFlag =2;
+ 673   5              }
+ 674   4            }
+ 675   3            else
+ 676   3            {
+ 677   4              if(h_Fault->StallDectSpeed>0)
+ 678   4              h_Fault->StallDectSpeed--;
+ 679   4            }
+ 680   3            
+ 681   3            //method 3      A/B/C三相任意一相相电流大于堵转电流，堵转保护
+ 682   3          if((h_Cur->Max_ia >= StallCurrentValue)||
+ 683   3             (h_Cur->Max_ib >= StallCurrentValue)||
+ 684   3             (h_Cur->Max_ic >= StallCurrentValue))
+ 685   3          {      
+ 686   4            h_Fault->mcStallDeCurrent++;              
+ 687   4            if(h_Fault->mcStallDeCurrent >= 20)         //判断满足条件达到设置次数，保护动作
+ 688   4            {
+ 689   5              h_Fault->mcStallDeCurrent=0;
+ 690   5              mcFaultSource=FaultStall; 
+ 691   5              mcProtectTime.StallTimes++;
+ 692   5              FaultProcess();   
+ 693   5              h_Fault->StallDelayCnt = 0;       //保护后重启开始重新计数，保持5S延迟
+ 694   5              mcProtectTime.StallFlag  =  3;
+ 695   5            }            
+ 696   4          } 
+ 697   3          else
+ 698   3            {
+ 699   4              if(h_Fault->mcStallDeCurrent>0)
+ 700   4              h_Fault->mcStallDeCurrent--;
+ 701   4            }
+ 702   3        }
+ 703   2      }
+ 704   1         
+ 705   1       #if (!StartONOFF_Enable)
+ 706   1      {
+ 707   2           /*******堵转保护恢复*********/
+ 708   2              if((mcFaultSource==FaultStall)&&(mcState == mcFault)&&(mcProtectTime.StallTimes<=4))  //堵转重�
+             -��次数
+ 709   2              {
+ 710   3                h_Fault->StallReCount++;
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 13  
+
+ 711   3                if(h_Fault->StallReCount>=StallRecoverTime)
+ 712   3                {
+ 713   4                  h_Fault->StallReCount=0;        //16000
+ 714   4                  mcFaultSource=FaultNoSource;
+ 715   4                  mcState =   mcInit;
+ 716   4                }
+ 717   3              }
+ 718   2              else
+ 719   2              {
+ 720   3                h_Fault->StallReCount=0;
+ 721   3              }
+ 722   2      }
+ 723   1      #endif
+ 724   1          
+ 725   1      }
+ 726           /*****************************************************************************
+ 727           * Function:     void Fault_phaseloss(mcFaultVarible *h_Fault)
+ 728           * Description:  缺相保护函数，当电机运行状态下，10ms取三相电流的最大值，
+ 729                           1.5s判断各相电流最大值，若存在两相电流值大于一定值，而第三相�
+             -�流值却非常小，则判断为缺相保护，电机停机；
+ 730           * Parameter:    mcFaultVarible *h_Fault
+ 731           * Return:       no
+ 732           *****************************************************************************/
+ 733            void Fault_phaseloss(FaultVarible *h_Fault)
+ 734            {   
+ 735   1            if(mcState == mcRun)
+ 736   1           {
+ 737   2              h_Fault->Lphasecnt++;
+ 738   2              if(h_Fault->Lphasecnt>50)//100*5=500ms  500ms判断一次
+ 739   2              {
+ 740   3                 h_Fault->Lphasecnt=0;
+ 741   3      
+ 742   3                 if(((mcCurVarible.Max_ia>(mcCurVarible.Max_ib*3))||(mcCurVarible.Max_ia>(mcCurVarible.Max_ic*3))) ||
+             -(mcCurVarible.Max_ia>PhaseLossCurrentValue))
+ 743   3                 {
+ 744   4                    h_Fault->AOpencnt++;
+ 745   4                 }
+ 746   3                 else
+ 747   3                 {
+ 748   4                  if(h_Fault->AOpencnt>0)
+ 749   4                    h_Fault->AOpencnt --;
+ 750   4                 }
+ 751   3                 if(((mcCurVarible.Max_ib >(mcCurVarible.Max_ia*3))||(mcCurVarible.Max_ib >(mcCurVarible.Max_ic*3))) 
+             -||(mcCurVarible.Max_ib >PhaseLossCurrentValue))
+ 752   3                 {
+ 753   4                   h_Fault->BOpencnt++;
+ 754   4                 }
+ 755   3                else
+ 756   3                 {
+ 757   4                   if(h_Fault->BOpencnt>0)
+ 758   4                    h_Fault->BOpencnt --;
+ 759   4                 }
+ 760   3                 if(((mcCurVarible.Max_ic >(mcCurVarible.Max_ia*3))||(mcCurVarible.Max_ic >(mcCurVarible.Max_ib*3))) 
+             -||(mcCurVarible.Max_ic >PhaseLossCurrentValue))
+ 761   3                 {
+ 762   4                   h_Fault->COpencnt++;
+ 763   4                 }
+ 764   3                else
+ 765   3                 {
+ 766   4                   if(h_Fault->COpencnt>0)
+ 767   4                    h_Fault->COpencnt --;
+ 768   4                 }
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 14  
+
+ 769   3                  mcCurVarible.Max_ia = 0;
+ 770   3                  mcCurVarible.Max_ib = 0;
+ 771   3                  mcCurVarible.Max_ic = 0;
+ 772   3                if(h_Fault->AOpencnt > 20|| h_Fault->BOpencnt > 20 || h_Fault->COpencnt > 20)
+ 773   3                 {
+ 774   4                    mcProtectTime.LossPHTimes++;
+ 775   4                    mcFaultSource=FaultLossPhase;
+ 776   4                    FaultProcess();
+ 777   4                 }
+ 778   3              }
+ 779   2            }
+ 780   1      
+ 781   1           /*******缺相保护恢复*********/
+ 782   1      #if (!StartONOFF_Enable)           //起停测试时屏蔽缺相保护恢复
+ 783   1      {
+ 784   2      //      if((mcFaultSource==FaultLossPhase)&&(mcState == mcFault)&&(mcProtectTime.LossPHTimes<5))//可重�
+             -�5次
+ 785   2      //       {
+ 786   2      //           h_Fault->mcLossPHRecCount++;
+ 787   2      //           if(h_Fault->mcLossPHRecCount>=PhaseLossRecoverTime)
+ 788   2      //           {
+ 789   2      //             h_Fault->AOpencnt=0;
+ 790   2      //             h_Fault->BOpencnt=0;
+ 791   2      //             h_Fault->COpencnt=0;
+ 792   2      //             mcState = mcReady;
+ 793   2      //             mcFaultSource=FaultNoSource;
+ 794   2      //           }
+ 795   2      //       }
+ 796   2      //    else
+ 797   2      //       {
+ 798   2      //           h_Fault->mcLossPHRecCount=0;
+ 799   2      //       }
+ 800   2      }
+ 801   1      #endif
+ 802   1                 
+ 803   1          }
+ 804          
+ 805          
+ 806          extern uint8 test_flag;
+ 807          /*---------------------------------------------------------------------------*/
+ 808          /* Name   : void Fault_Detection(void)
+ 809          /* Input  : NO
+ 810          /* Output : NO
+ 811          /* Description: 保护函数，因保护的时间响应不会很高，采用分段处理，每5个定时�
+             -�中断执行一次对应的保护
+ 812                          常见保护有过欠压、过温、堵转、启动、缺相等保护，调试时，可根�
+             -��需求，一个个的调试加入。
+ 813          /*---------------------------------------------------------------------------*/
+ 814          void Fault_Detection(void)
+ 815          {
+ 816   1          mcFaultDect.segment++;
+ 817   1          if(mcFaultDect.segment>=5)
+ 818   1          {
+ 819   2            mcFaultDect.segment=0;
+ 820   2          }
+ 821   1          if(mcFaultDect.segment==0)
+ 822   1          {
+ 823   2            if(CurrentRecoverEnable)//过流保护恢复使能
+ 824   2            {
+ 825   3              Fault_OverCurrentRecover(&mcFaultDect);
+ 826   3            }
+ 827   2            if(PowerRecoverEnable) //功率保护恢复使能
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 15  
+
+ 828   2            {
+ 829   3              Fault_OverPowerRecover(&mcFaultDect);
+ 830   3            }
+ 831   2            
+ 832   2          }
+ 833   1          else if(mcFaultDect.segment==1)
+ 834   1          {
+ 835   2            if((VoltageProtectEnable==1)&&(test_flag == 0))//过压保护使能
+ 836   2            {
+ 837   3              Fault_OverUnderVoltage(&mcFaultDect);
+ 838   3            }
+ 839   2            
+ 840   2            if(OverPowerProtectEnable==1); //功率保护使能
+ 841   2            {
+ 842   3              Fault_Power(&mcFaultDect);
+ 843   3            }       
+ 844   2          }
+ 845   1          else if(mcFaultDect.segment==2)
+ 846   1          {
+ 847   2            if(StartProtectEnable==1)//启动保护使能
+ 848   2            {
+ 849   3              Fault_Start(&mcFaultDect);
+ 850   3            }
+ 851   2          }
+ 852   1          else if(mcFaultDect.segment==3)
+ 853   1          {
+ 854   2            if(StallProtectEnable==1)//堵转保护使能
+ 855   2            {
+ 856   3              Fault_Stall(&mcFaultDect,&mcCurVarible);
+ 857   3            }
+ 858   2          }
+ 859   1          else if(mcFaultDect.segment==4)
+ 860   1          {
+ 861   2            if(PhaseLossProtectEnable==1)//缺相保护使能
+ 862   2            {
+ 863   3              Fault_phaseloss(&mcFaultDect);
+ 864   3            }
+ 865   2            
+ 866   2          }
+ 867   1          else
+ 868   1          {
+ 869   2      
+ 870   2          }
+ 871   1      }
+ 872          
+ 873          /*---------------------------------------------------------------------------*/
+ 874          /* Name   : void ONOFF_Starttest(void)
+ 875          /* Input  : NO
+ 876          /* Output : NO
+ 877          /* Description: 启动测试
+ 878          /*---------------------------------------------------------------------------*/
+ 879          void ONOFF_Starttest(ONVarible  *h_test)
+ 880          {
+ 881   1        if(h_test->ONOFF_Flag==1)
+ 882   1        {
+ 883   2           h_test->ON_Count++;
+ 884   2          if(h_test->ON_Count>StartON_Time)
+ 885   2          {
+ 886   3            h_test->ON_Count=0;
+ 887   3            h_test->ONOFF_Times++;
+ 888   3            h_test->ONOFF_Flag=0;
+ 889   3            mcSpeedRamp.FlagONOFF = 0;
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 16  
+
+ 890   3            mcSpeedRamp.TargetValue = 0;
+ 891   3      
+ 892   3          }
+ 893   2        }
+ 894   1        else
+ 895   1        {
+ 896   2          if(mcState!=mcFault)
+ 897   2          {
+ 898   3            h_test->OFF_Count++;
+ 899   3            if(h_test->OFF_Count>StartOFF_Time)
+ 900   3            {
+ 901   4              h_test->OFF_Count=0;
+ 902   4              h_test->ONOFF_Flag=1;
+ 903   4              mcSpeedRamp.FlagONOFF = 1;
+ 904   4              mcSpeedRamp.TargetValue = Motor_Test_Speed;
+ 905   4      
+ 906   4            }
+ 907   3          }
+ 908   2      
+ 909   2        }
+ 910   1      }
+ 911          
+ 912          /*---------------------------------------------------------------------------*/
+ 913          /* Name   : void Speed_response(void)
+ 914          /* Input  : NO
+ 915          /* Output : NO
+ 916          /* Description: 速度响应函数，可根据需求加入控制环，如恒转矩控制、恒转速控制
+             -、恒功率控制
+ 917          /*---------------------------------------------------------------------------*/
+ 918          
+ 919          
+ 920          void Speed_response(void)
+ 921          {
+ 922   1          uint16  UqMinTemp = 0;     //UQ限幅最小值缓存变量
+ 923   1        
+ 924   1          if((mcState ==mcRun)||(mcState ==mcStop))
+ 925   1          { 
+ 926   2              mcSpeedRamp.IncValue  = SPEEDRAMPINC;             //运行速度环增量
+ 927   2              mcSpeedRamp.DecValue  = SPEEDRAMPDEC;
+ 928   2                
+ 929   2            switch(mcFocCtrl.CtrlMode)
+ 930   2            {
+ 931   3              case 0:
+ 932   3              {
+ 933   4                  if(FOC__EOME > Motor_Loop_Speed)//>=MOTOR_LOOP_RPM
+ 934   4                  {
+ 935   5                    FOC__THECOMP  = _Q15(0.0/180.0);                        // SMO 估算补偿角
+ 936   5                    FOC__THECOR     = 0x04;   
+ 937   5                    mcFocCtrl.CtrlMode = 1;
+ 938   5                    FOC_DQKP = DQKP;
+ 939   5                    FOC_DQKI = DQKI;
+ 940   5                    FOC_QMAX      = QOUTMAX;
+ 941   5                    # if (Motor_Speed_Control_Mode == SPEED_LOOP_CONTROL)
+ 942   5                    {
+ 943   6                         mcSpeedRamp.ActualValue = FOC__EOME ;  //防止mcSpeedRamp.ActualValue从0开始爬坡，造成
+             -估算异常，电流异常
+ 944   6                    }
+ 945   5                    #elif (Motor_Speed_Control_Mode == POWER_LOOP_CONTROL)
+                            {
+                              mcSpeedRamp.ActualValue = mcFocCtrl.Powerlpf;
+                            }
+                            #endif
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 17  
+
+ 950   5                    
+ 951   5                    OutLoopParameterSet();       //环路基本参数设置
+ 952   5                  }
+ 953   4                  else
+ 954   4                  {
+ 955   5                    
+ 956   5      //              if(FOC_IQREF < I_Value(0.6))
+ 957   5      //              {
+ 958   5      //                FOC_IQREF += 1;
+ 959   5      //              }
+ 960   5                    
+ 961   5      //              UqMinTemp = FOC_QMIN;
+ 962   5      //              if(UqMinTemp < QOUTMINSTEND)
+ 963   5      //              {
+ 964   5      //                UqMinTemp += 10 ;
+ 965   5      //                FOC_QMIN = UqMinTemp;
+ 966   5      //              }
+ 967   5                  }
+ 968   4                }
+ 969   3                break;
+ 970   3                case 1:
+ 971   3                {
+ 972   4                              
+ 973   4                  #if (OUTLoop_Mode== OUTLoop_Disable)
+                          {
+                              mcFocCtrl.mcIqref = FOC_IQREF;
+                              if (FOC_IQREF < QOUTVALUE)
+                              {
+                                  mcFocCtrl.mcIqref += QOUTINC;
+                                  if (mcFocCtrl.mcIqref > QOUTVALUE) mcFocCtrl.mcIqref = QOUTVALUE;
+                                  FOC_IQREF = mcFocCtrl.mcIqref;
+                              }
+                              else if (FOC_IQREF > QOUTVALUE)
+                              {
+                                  mcFocCtrl.mcIqref -= QOUTINC;
+                                  if (mcFocCtrl.mcIqref < QOUTVALUE) mcFocCtrl.mcIqref = QOUTVALUE;
+                                  FOC_IQREF = mcFocCtrl.mcIqref;
+                              }
+                          }
+              
+                          #elif (OUTLoop_Mode== OUTLoop_Enable)
+ 991   4                  {
+ 992   5                      mcFocCtrl.SpeedRampTime++;
+ 993   5                      if(mcFocCtrl.SpeedRampTime > SPEEDRAMPTIME)
+ 994   5                      {
+ 995   6                          mcFocCtrl.SpeedRampTime = 0;
+ 996   6                          mc_ramp(&mcSpeedRamp);       //外环速度爬坡或减速。每SpeedRampTime执行一次
+ 997   6                      }
+ 998   5                      
+ 999   5                      mcFocCtrl.SpeedLoopTime++;
+1000   5                      if(mcFocCtrl.SpeedLoopTime > SPEED_LOOP_TIME)  //外环调节周期
+1001   5                      {
+1002   6                          mcFocCtrl.SpeedLoopTime=0;
+1003   6      
+1004   6                          #if (Motor_Speed_Control_Mode == SPEED_LOOP_CONTROL)
+1005   6                          {             
+1006   7                            SpeedPICtrl.ExtRef = mcSpeedRamp.ActualValue;
+1007   7                            SpeedPICtrl.ExtFed = mcFocCtrl.SpeedFlt;
+1008   7                            
+1009   7                            if(mcFocCtrl.SpeedFlt <(_Q15(80000 / MOTOR_SPEED_BASE)))
+1010   7                            {
+1011   8                              PI_KP       = SKP;
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 18  
+
+1012   8                              PI_KI       = SKI;
+1013   8                            }
+1014   7                            else
+1015   7                            {
+1016   8                              mcSpeedRamp.IncValue  = SPEEDRAMPINC /5;              //运行速度环增量
+1017   8                              mcSpeedRamp.DecValue  = SPEEDRAMPDEC /5;
+1018   8                              PI_KP       = SKPH;
+1019   8                              PI_KI       = SKIH;
+1020   8                            }
+1021   7                            HW_PI_Control(&SpeedPICtrl);             //
+1022   7                            FOC_IQREF = SpeedPICtrl.ExtOut;
+1023   7                          }
+1024   6                          #elif (Motor_Speed_Control_Mode == POWER_LOOP_CONTROL)
+                                  {
+                                     FOC_IQREF= HW_One_PI(mcSpeedRamp.ActualValue- mcFocCtrl.Powerlpf);
+                                  }
+                                  #endif
+1029   6                      }
+1030   5                      
+1031   5      
+1032   5                // 判断FOC_QMIN值恢复到正常值
+1033   5      //          UqMinTemp = FOC_QMIN;
+1034   5      //          if(UqMinTemp > QOUTMIN)
+1035   5      //          {
+1036   5      //            UqMinTemp -- ;
+1037   5      //            FOC_QMIN = UqMinTemp;
+1038   5      //          } 
+1039   5                      
+1040   5                 }
+1041   4                 #endif //END OUTLoop_Mode
+1042   4      
+1043   4      
+1044   4                 if(FOC_EK2 < OBS_K2T_Actual-10)
+1045   4                 {
+1046   5                   mcFocCtrl.Smo_EK2=FOC_EK2;
+1047   5                   mcFocCtrl.Smo_EK2+=10;
+1048   5                   FOC_EK2=mcFocCtrl.Smo_EK2;
+1049   5                 }
+1050   4                 else if(FOC_EK2 > OBS_K2T_Actual+10)
+1051   4                 {
+1052   5                   mcFocCtrl.Smo_EK2=FOC_EK2;
+1053   5                   mcFocCtrl.Smo_EK2-=10;
+1054   5                   FOC_EK2=mcFocCtrl.Smo_EK2;
+1055   5                 }
+1056   4                 else
+1057   4                 {
+1058   5                   FOC_EK2=OBS_K2T_Actual;
+1059   5                 }
+1060   4                  
+1061   4              }
+1062   3              break;
+1063   3            }
+1064   2          }
+1065   1      
+1066   1      }
+1067          
+1068          
+1069          /*---------------------------------------------------------------------------*/
+1070          /* Name   : void FGOutput(void)
+1071          /* Input  : NO
+1072          /* Output : NO
+1073          /* Description: FG信号输出
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 19  
+
+1074          /*---------------------------------------------------------------------------*/
+1075          void FGOutput(void)
+1076          {//FG可用中断FGIF进行判断
+1077   1        if(mcState==mcRun)
+1078   1        {
+1079   2          if((FOC__THETA>=0)&&(FOC__THETA<32768))//0-180
+1080   2          {
+1081   3            ResetFGPin;
+1082   3          }
+1083   2          else if((FOC__THETA>=32768)&&(FOC__THETA<65536))//180-360
+1084   2          {
+1085   3            SetFGPin;
+1086   3          }
+1087   2        }
+1088   1        else if(mcState == mcFault)
+1089   1        {
+1090   2            SetFGPin;
+1091   2        }
+1092   1        else
+1093   1        {
+1094   2            ResetFGPin;
+1095   2        }
+1096   1      }
+1097          /*---------------------------------------------------------------------------*/
+1098          /* Name   :  uint16 SoftLPF(uint16 Xn1, uint16 Xn0, uint16 K)
+1099          /* Input  : uint16 Xn1, uint16 Xn0, uint16 K
+1100          /* Output : uint16
+1101          /* Description: 软件低通滤波
+1102          /*---------------------------------------------------------------------------*/
+1103           int16 SoftLPF(int16 Xn1, int16 Xn0, int16 K)
+1104           {
+1105   1         int16 Temp16 = 0;
+1106   1         int32 Temp32 = 0;
+1107   1      
+1108   1         Temp32 = (((int32)Xn1 - (int32)Xn0) * (int32)K) >> 15;
+1109   1         Temp16 = Xn0 + (int16)Temp32;
+1110   1         return Temp16;
+1111   1       }
+1112          
+1113          
+1114          /*---------------------------------------------------------------------------*/
+1115          /* Name   : void LED_Display(void)
+1116          /* Input  : NO
+1117          /* Output : NO
+1118          /* Description: LED灯显示
+1119          /*---------------------------------------------------------------------------*/
+1120          void LED_Display(void)
+1121          {
+1122   1        switch(mcFaultSource)
+1123   1        {
+1124   2          case FaultNoSource:
+1125   2          SetLEDPin;                          //低电平点亮，高电平灭
+1126   2            break;
+1127   2          case FaultHardOVCurrent:             //硬件过流保护闪烁10次           
+1128   2              Led_OnOff(&mcLedDisplay,10);
+1129   2            break;
+1130   2          case FaultSoftOVCurrent:            //软件过流保护闪烁4次           
+1131   2              Led_OnOff(&mcLedDisplay,4);
+1132   2            break;
+1133   2          case FaultUnderVoltage:              //欠压保护闪烁2次
+1134   2              Led_OnOff(&mcLedDisplay,2);
+1135   2            break;
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 20  
+
+1136   2          case FaultOverVoltage:                //过压保护闪烁3次
+1137   2              Led_OnOff(&mcLedDisplay,3);
+1138   2            break;
+1139   2          case FaultLossPhase:                  //缺相保护闪烁8次
+1140   2              Led_OnOff(&mcLedDisplay,5);
+1141   2            break;
+1142   2          case FaultStall:                     //堵转保护闪烁6次
+1143   2              Led_OnOff(&mcLedDisplay,6);
+1144   2            break;
+1145   2          case  FaultOverPower:               //功率保护闪烁7次
+1146   2              Led_OnOff(&mcLedDisplay,7);
+1147   2            break;
+1148   2      
+1149   2          default:
+1150   2            break;
+1151   2        }
+1152   1      
+1153   1      }
+1154          
+1155            //LED灯的闪烁
+1156          void Led_OnOff(MCLedDisplay *hLedDisplay,uint8 htime)
+1157          {
+1158   1        hLedDisplay->LedCount++;
+1159   1        if(hLedDisplay->LedCount<hLedDisplay->Counttime)
+1160   1         {
+1161   2            if(hLedDisplay->Count<200)
+1162   2            {
+1163   3             hLedDisplay->Count++;
+1164   3      
+1165   3            }
+1166   2            else if((hLedDisplay->Count>=200)&&(hLedDisplay->Count<201))
+1167   2            {
+1168   3              hLedDisplay->Count=0;
+1169   3              LEDPinONOFF;
+1170   3              hLedDisplay->LedTimCot++;
+1171   3            }
+1172   2            else
+1173   2              ;
+1174   2            if(hLedDisplay->LedTimCot>=2*htime)
+1175   2            {
+1176   3              hLedDisplay->Count=202;
+1177   3              SetLEDPin;
+1178   3            }
+1179   2          }
+1180   1          else if(hLedDisplay->LedCount>=hLedDisplay->Counttime)
+1181   1          {
+1182   2           hLedDisplay->LedCount=0;
+1183   2           hLedDisplay->LedTimCot=0;
+1184   2           hLedDisplay->Count=0;
+1185   2          }
+1186   1      }
+1187          /*---------------------------------------------------------------------------*/
+1188          /* Name   : void mc_ramp(void)
+1189          /* Input  : hTarget,MC_RAMP *hSpeedramp
+1190          /* Output : NO
+1191          /* Description:
+1192          /*---------------------------------------------------------------------------*/
+1193          
+1194          void mc_ramp(MCRAMP *hSpeedramp)
+1195          {
+1196   1      //  if( --hSpeedramp->DelayCount < 0)
+1197   1      //  {
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 21  
+
+1198   1      //    hSpeedramp->DelayCount = hSpeedramp->DelayPeriod;
+1199   1      
+1200   1          if (hSpeedramp->ActualValue < hSpeedramp->TargetValue)
+1201   1          {
+1202   2              if(hSpeedramp->ActualValue + hSpeedramp->IncValue < hSpeedramp->TargetValue)
+1203   2              {
+1204   3                  hSpeedramp->ActualValue += hSpeedramp->IncValue;
+1205   3              }
+1206   2              else
+1207   2              {
+1208   3                  hSpeedramp->ActualValue = hSpeedramp->TargetValue;
+1209   3              }
+1210   2          }
+1211   1          else
+1212   1          {
+1213   2              if(hSpeedramp->ActualValue - hSpeedramp->DecValue > hSpeedramp->TargetValue)
+1214   2              {
+1215   3      
+1216   3                  hSpeedramp->ActualValue -= hSpeedramp->DecValue;
+1217   3              }
+1218   2              else
+1219   2              {
+1220   3                  hSpeedramp->ActualValue = hSpeedramp->TargetValue;
+1221   3              }
+1222   2          }
+1223   1      //  }
+1224   1      }
+1225          
+1226          /*-------------------------------------------------------------------------------------------------
+1227            Function Name : int16 HW_One_PI(int16 Xn1, int16 Yn0, int16 Xn2)
+1228            Description   : PI控制
+1229            Input         : Xn1--E(K)
+1230            Output      : PI_UK--当前PI输出值,执行时间us
+1231          -------------------------------------------------------------------------------------------------*/
+1232          int16 HW_One_PI(int16 Xn1)
+1233          {
+1234   1          PI_EK =  Xn1;                               //填入EK
+1235   1          SetBit(PI_LPF_CR,PISTA);                    // Start PI
+1236   1      //    PI_LPF_CR |= 0x02;                          // Start PI
+1237   1          _nop_();  _nop_();  _nop_();  _nop_();  _nop_();
+1238   1          PI_UK += ((SKP>>12) +1);
+1239   1          return PI_UK;
+1240   1      }
+1241          
+1242          void HW_PI_Control(OUTLOOP *PIPara)
+1243          {   
+1244   1          PI_EK =  PIPara->ExtErr;                                                    //填入本次EK 误差值
+1245   1          SetBit(PI_LPF_CR,PISTA);                                                    // Start PI
+1246   1          _nop_();  _nop_();  _nop_();  _nop_();  _nop_();
+1247   1        
+1248   1          PI_UK     = PIPara->ExtOutL;
+1249   1          PI_UKMAX  = SOUTMAX;
+1250   1          PI_UKMIN  = SOUTMIN;
+1251   1          PIPara->ExtErr = PIPara->ExtRef - PIPara->ExtFed;
+1252   1          PI_EK =  PIPara->ExtErr;
+1253   1        
+1254   1          SetBit(PI_LPF_CR,PISTA);                                                    // Start PI
+1255   1          _nop_();  _nop_();  _nop_();  _nop_();  _nop_();
+1256   1          PIPara->ExtOut = PI_UK + 1;                                                 // 补偿PI输出误差
+1257   1          PIPara->ExtOutL= PIPara->ExtOut;
+1258   1          
+1259   1      }
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 22  
+
+1260          
+1261          /*-------------------------------------------------------------------------------------------------
+1262            Function Name : int16 LPF(int16 Xn1, int16 Xn0, int8 K)
+1263            Description   : LFP控制
+1264            Input         : Xn1--当前输入值
+1265                            Xn0--上一次滤波输出值
+1266                            K--LPF滤波系数
+1267            Output        : LPF_Y--当前滤波输出值，执行时间为4us。
+1268          -------------------------------------------------------------------------------------------------*/
+1269          int16 LPFFunction(int16 Xn1, int16 Xn0, int8 K)
+1270          {
+1271   1        LPF_K = K;
+1272   1        LPF_X = Xn1;
+1273   1        LPF_Y = Xn0;
+1274   1        SetBit(PI_LPF_CR, LPFSTA);
+1275   1        _nop_();_nop_();_nop_();_nop_();_nop_();
+1276   1        return LPF_Y;
+1277   1      }
+1278          
+1279          /*---------------------------------------------------------------------------*/
+1280          /* Name   : void VSPSample(void)
+1281          /* Input  : NO
+1282          /* Output : NO
+1283          /* Description: VSP采样
+1284          /*---------------------------------------------------------------------------*/
+1285          void VSPSample(void)
+1286          {
+1287   1        /*****VREF的采样获取值并滤波******/
+1288   1        AdcSampleValue.ADCVref = (ADC7_DR<<3);//采集对应端口
+1289   1        VSP=LPFFunction(AdcSampleValue.ADCVref,VSP,30);//低通滤波
+1290   1      
+1291   1          if((VSP > ONPWMDuty)&&(VSP <= OFFPWMDutyHigh))//在ONPWMDuty-OFFPWMDutyHigh之间，电机有转速运�
+             -��
+1292   1          {
+1293   2            mcSpeedRamp.FlagONOFF = 1;
+1294   2          }
+1295   1          else if((VSP < OFFPWMDuty)||(VSP > OFFPWMDutyHigh))//电机停机
+1296   1          {
+1297   2            mcSpeedRamp.FlagONOFF = 0;
+1298   2          }
+1299   1          //转速曲线计算
+1300   1          if(mcSpeedRamp.FlagONOFF==1)//
+1301   1          {
+1302   2            #if (Motor_Speed_Control_Mode == SPEED_LOOP_CONTROL)
+1303   2            {
+1304   3              if(VSP <= MINPWMDuty)    //最小转速运行
+1305   3              {
+1306   4                mcSpeedRamp.TargetValue = Motor_Min_Speed;
+1307   4              }
+1308   3              else if(VSP < MAXPWMDuty)//调速
+1309   3              {
+1310   4                mcSpeedRamp.TargetValue = Motor_Min_Speed + SPEED_K*(VSP-MINPWMDuty);
+1311   4              }
+1312   3              else         //最大转速运行
+1313   3              {
+1314   4                mcSpeedRamp.TargetValue = Motor_Max_Speed;
+1315   4              }
+1316   3            }
+1317   2            #elif (Motor_Speed_Control_Mode == POWER_LOOP_CONTROL)
+                    {
+                      if(VSP <= MINPWMDuty)    //最小转速运行
+                      {
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 23  
+
+                        mcSpeedRamp.TargetValue = Motor_Min_Power;
+                      }
+                      else if(VSP < MAXPWMDuty)//调速
+                      {
+                        mcSpeedRamp.TargetValue = Motor_Min_Power + POWER_K*(VSP-MINPWMDuty);
+                      }
+                      else         //最大转速运行
+                      {
+                        mcSpeedRamp.TargetValue = Motor_Max_Power;
+                      }
+                    }
+                    #endif
+1333   2      
+1334   2          }
+1335   1          else
+1336   1          {
+1337   2            mcSpeedRamp.TargetValue =0;
+1338   2          }
+1339   1      }
+1340          /*---------------------------------------------------------------------------*/
+1341          /* Name   : void Sleepmode(void)
+1342          /* Input  : NO
+1343          /* Output : NO
+1344          /* Description: 睡眠模式测试
+1345          /*---------------------------------------------------------------------------*/
+1346           void Sleepmode(void)
+1347           {
+1348   1          SleepSet.SleepDelayCout++;
+1349   1          if(SleepSet.SleepDelayCout>=20000)//最大65530，若要再大，需改数据类型
+1350   1          {
+1351   2      //        FOC_EFREQMIN  = -Motor_Omega_Ramp_Min;
+1352   2      //        FOC_EFREQHOLD = -Motor_Omega_Ramp_End;
+1353   2            mcSpeedRamp.TargetValue=0;
+1354   2            MOE     = 0;
+1355   2            ClrBit(DRV_CR, FOCEN);  //关闭FOC
+1356   2            SleepSet.SleepDelayCout=0;
+1357   2            SleepSet.SleepFlag=1;
+1358   2            SetBit(P1_IE, P11);   // config P11 as the source of EXTI1
+1359   2            SetBit(PCON, STOP);
+1360   2          }
+1361   1      
+1362   1       }
+1363          /*---------------------------------------------------------------------------*/
+1364          /* Name   : void StarRampDealwith(void)
+1365          /* Input  : NO
+1366          /* Output : NO
+1367          /* Description:
+1368          /*---------------------------------------------------------------------------*/
+1369          void StarRampDealwith(void)
+1370          {
+1371   1          if((mcState == mcRun))
+1372   1          {
+1373   2            if(mcFocCtrl.State_Count == 100)//2300
+1374   2            {
+1375   3              FOC_EKP = OBSW_KP_GAIN_RUN;                           // 估算器里的PI的KP
+1376   3              FOC_EKI = OBSW_KI_GAIN_RUN;                           // 估算器里的PI的KI
+1377   3            }
+1378   2            else if(mcFocCtrl.State_Count == 60)//2000
+1379   2            {
+1380   3              FOC_EKP = OBSW_KP_GAIN_RUN1;                          // 估算器里的PI的KP
+1381   3              FOC_EKI = OBSW_KI_GAIN_RUN1;                          // 估算器里的PI的KI
+1382   3            }
+C51 COMPILER V9.52.0.0   ADDFUNCTION                                                       04/16/2020 10:07:49 PAGE 24  
+
+1383   2            else if(mcFocCtrl.State_Count == 40)//1600
+1384   2            {
+1385   3              FOC_EKP = OBSW_KP_GAIN_RUN2;                          // 估算器里的PI的KP
+1386   3              FOC_EKI = OBSW_KI_GAIN_RUN2;                          // 估算器里的PI的KI
+1387   3            }
+1388   2            else if(mcFocCtrl.State_Count ==20)//1200
+1389   2            {
+1390   3              FOC_EKP = OBSW_KP_GAIN_RUN3;                          // 估算器里的PI的KP
+1391   3              FOC_EKI = OBSW_KI_GAIN_RUN3;                          // 估算器里的PI的KI
+1392   3            }
+1393   2            else if(mcFocCtrl.State_Count == 10)
+1394   2            {
+1395   3              FOC_EKP = OBSW_KP_GAIN_RUN4;                          // 估算器里的PI的KP
+1396   3              FOC_EKI = OBSW_KI_GAIN_RUN4;                          // 估算器里的PI的KI
+1397   3            }
+1398   2            else;
+1399   2          }
+1400   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   5962    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =    146      42
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =    132    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

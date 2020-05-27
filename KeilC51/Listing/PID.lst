@@ -1,0 +1,316 @@
+C51 COMPILER V9.52.0.0   PID                                                               08/28/2018 10:18:49 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE PID
+OBJECT MODULE PLACED IN .\Output\PID.obj
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE ..\User\Source\Function\PID.c LARGE OMF2 WARNINGLEVEL(0) BROWSE INCDIR(..\L
+                    -ibrary\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\PID.lst) TABS(2) OBJECT(.\Output\PID.obj)
+
+line level    source
+
+   1          /**************************** (C) COPYRIGHT 2015 Fortiortech shenzhen *****************************
+   2          * File Name          : PID.c
+   3          * Author             : Billy Long Fortiortech  Market Dept
+   4          * Version            : V1.0
+   5          * Date               : 01/07/2015
+   6          * Description        : This file contains PI control function used for Motor Control.
+   7          ***************************************************************************************************
+   8          * All Rights Reserved
+   9          **************************************************************************************************/
+  10          
+  11          
+  12          /* Includes -------------------------------------------------------------------------------------*/
+  13          #include <FU68xx.h>
+  14          #include <Myproject.h>
+*** ERROR C141 IN LINE 18 OF ..\User\Include\PID.h: syntax error near 'uint16'
+*** ERROR C129 IN LINE 18 OF ..\User\Include\PID.h: missing ';' before 'Kp'
+  15          
+  16          /* Private variables ----------------------------------------------------------------------------*/
+  17          bit FlagStartPI = 0;
+  18          
+  19          Ramp_TypeDef idata SpeedRamp;
+  20          PID_TypeDef idata SpeedPID;
+  21          PID_TypeDef idata CurrentPID;
+  22          
+  23          
+  24          /*-------------------------------------------------------------------------------------------------
+  25            Function Name : void SpeedPIDInit(void)
+  26            Description   : 速度PID参数初始化
+  27            Input         : 无
+  28            Output        : 无
+  29          -------------------------------------------------------------------------------------------------*/
+  30          void SpeedPIDInit(void)
+  31          {
+  32            SpeedPID.Kp = TempSpeedKP;
+  33            SpeedPID.Ki = TempSpeedKI;
+  34            SpeedPID.Err = 0;
+  35            SpeedPID.Err_Last1 = 0;
+  36            SpeedPID.Err_Err = 0;
+  37            #if (SpeedCloseLoopEnable)
+                {
+                  SpeedPID.Out = TempMotorStartDuty;
+                  SpeedPID.OutMax = MotorVSMax;
+                  SpeedPID.OutMin = TempMotorStartDuty;
+                }
+                #elif ((SpeedCloseLoopEnable)&&(CurrentCloseLoopEnable))
+                {
+                  SpeedPID.Out = 0;
+                  SpeedPID.OutMax = TempCurrentMax;
+                  SpeedPID.OutMin = TempCurrentMin;
+                }
+                #endif
+  50          }
+  51          
+  52          /*-------------------------------------------------------------------------------------------------
+C51 COMPILER V9.52.0.0   PID                                                               08/28/2018 10:18:49 PAGE 2   
+
+  53            Function Name : void SpeedRampInit(void)
+  54            Description   : 速度爬坡参数初始化
+  55            Input         : 无
+  56            Output        : 无
+  57          -------------------------------------------------------------------------------------------------*/
+  58          void SpeedRampInit(void)
+  59          {
+  60            SpeedRamp.RampInc = SpeedRampInc;
+  61            SpeedRamp.RampDec = SpeedRampDec;
+  62            SpeedRamp.RampStep = MC.SpeedCtl.PISpeed;
+  63          }
+  64          
+  65          /*-------------------------------------------------------------------------------------------------
+  66            Function Name : void CurrentPIDInit(void)
+  67            Description   : 电流PI参数初始化
+  68            Input         : 无
+  69            Output        : 无
+  70          -------------------------------------------------------------------------------------------------*/
+  71          void CurrentPIDInit(void)
+  72          {
+  73            CurrentPID.Kp = TempCurrentKP;
+  74            CurrentPID.Ki = TempCurrentKI;
+  75            CurrentPID.Err = 0;
+  76            CurrentPID.Err_Last1 = 0;
+  77            CurrentPID.Err_Err = 0;
+  78            CurrentPID.Out = TempMotorStartDuty;
+  79            CurrentPID.OutMax = MotorVSMax;
+  80            CurrentPID.OutMin = TempMotorStartDuty;
+  81          }
+  82          
+  83          /*-------------------------------------------------------------------------------------------------
+  84            Function Name : int16 RampControl(Ramp_TypeDef *Ramp, int16 Ref)
+  85            Description   : 爬坡控制函数，根据设定爬坡增量把当前值向目标值靠拢
+  86            Input         : Ramp--爬坡对象数组
+  87                            Ref--爬坡参考目标
+  88            Output        : RampStep--爬坡当前输出
+  89          -------------------------------------------------------------------------------------------------*/
+  90          int16 RampControl(Ramp_TypeDef *Ramp, int16 Ref)
+  91          {
+  92            Ramp->RampTarget = Ref;
+  93            if(Ramp->RampTarget > Ramp->RampStep)
+  94            {
+  95              if((Ramp->RampStep + Ramp->RampInc) <= Ramp->RampTarget)
+  96              {
+  97                Ramp->RampStep += Ramp->RampInc;
+  98              }
+  99              else
+ 100              {
+ 101                Ramp->RampStep = Ramp->RampTarget;
+ 102              }
+ 103            }
+ 104            else if(Ramp->RampTarget < Ramp->RampStep)
+ 105            {
+ 106              if((Ramp->RampStep - Ramp->RampDec) >= Ramp->RampTarget)
+ 107              {
+ 108                Ramp->RampStep -= Ramp->RampDec;
+ 109              }
+ 110              else
+ 111              {
+ 112                Ramp->RampStep = Ramp->RampTarget;
+ 113              }
+ 114            }
+C51 COMPILER V9.52.0.0   PID                                                               08/28/2018 10:18:49 PAGE 3   
+
+ 115          
+ 116            return  Ramp->RampStep;
+ 117          }
+ 118          
+ 119          /*-------------------------------------------------------------------------------------------------
+ 120            Function Name : int16 PIDControl(PID_TypeDef *PID, int16 Ref, int16 Cur)
+ 121            Description   : PI调节函数
+ 122            Input         : PID--PI调节对象数组
+ 123                            Ref--PI调节参考目标
+ 124                            Cur--PI当前输入
+ 125            Output        : Out--PI调节输出
+ 126          -------------------------------------------------------------------------------------------------*/
+ 127          int16 PIDControl(PID_TypeDef *PID, int16 Ref, int16 Cur)
+ 128          {
+ 129            int32 Kp_Out, Ki_Out, PID_Out;
+ 130          
+ 131            /*PI运算时间67us*/
+ 132            if(!PID->Err)
+ 133            {
+ 134              PID->Err_Last1 = Ref - Cur;                            // 初始化PID上次偏差
+ 135              PID->Err = Ref - Cur;                                  // 初始化PID当前偏差
+ 136              PID->Err_Err=PID->Err - PID->Err_Last1;                // 初始化PID上次偏差和上上次偏差之差
+ 137            }
+ 138            else
+ 139            {
+ 140              PID->Err_Last1 = PID->Err;                             // 保存PID上次偏差
+ 141              PID->Err = Ref - Cur;                                  // 计算PID当前偏差
+ 142              PID->Err_Err=PID->Err - PID->Err_Last1;                // 计算PID上次偏差和上上次偏差之差
+ 143            }
+ 144          
+ 145            Kp_Out = ((int32)PID->Kp * (int32)PID->Err_Err) >> 12;
+ 146            Ki_Out = ((int32)PID->Ki * (int32)PID->Err) >> 12;
+ 147          
+ 148            PID_Out = PID->Out;
+ 149            PID_Out += Kp_Out + Ki_Out;
+ 150          
+ 151            if(PID_Out > PID->OutMax)
+ 152            {
+ 153              PID_Out = PID->OutMax;                                 // PID最高输出
+ 154            }
+ 155            if(PID_Out < PID->OutMin)
+ 156            {
+ 157              PID_Out = PID->OutMin;                                 // PID最低输出
+ 158            }
+ 159            PID->Out = PID_Out;
+ 160          
+ 161            return PID->Out;
+ 162          }
+ 163          
+ 164          /*-------------------------------------------------------------------------------------------------
+ 165            Function Name : int16 PIDControl(PID_TypeDef *PID, int16 Ref, int16 Cur)
+ 166            Description   : PI调节函数
+ 167            Input         : PID--PI调节对象数组
+ 168                            Ref--PI调节参考目标
+ 169                            Cur--PI当前输入
+ 170            Output        : Out--PI调节输出
+ 171          -------------------------------------------------------------------------------------------------*/
+ 172          int16 PID_Control(PID_TypeDef *PID, int16 Ref, int16 Cur)
+ 173          {
+ 174            int16 Kp_Out;
+ 175            int16 Ki_Out;
+ 176            int32 PID_Out;
+C51 COMPILER V9.52.0.0   PID                                                               08/28/2018 10:18:49 PAGE 4   
+
+ 177          
+ 178            /*PI运算时间42us*/
+ 179            if(!PID->Err)
+ 180            {
+ 181              PID->Err_Last1 = Ref - Cur;                            // 初始化PID上次偏差
+ 182              PID->Err = Ref - Cur;                                  // 初始化PID当前偏差
+ 183              PID->Err_Err=PID->Err - PID->Err_Last1;                // 初始化PID上次偏差和上上次偏差之差
+ 184            }
+ 185            else
+ 186            {
+ 187              PID->Err_Last1 = PID->Err;                             // 保存PID上次偏差
+ 188              PID->Err = Ref - Cur;                                  // 计算PID当前偏差
+ 189              PID->Err_Err=PID->Err - PID->Err_Last1;                // 计算PID上次偏差和上上次偏差之差
+ 190            }
+ 191          
+ 192            Kp_Out = MDU_MULA_S16(PID->Kp, PID->Err_Err, 12);
+ 193            Ki_Out = MDU_MULA_S16(PID->Ki, PID->Err, 12);
+ 194            PID_Out = PID->Out;
+ 195            PID_Out += Kp_Out + Ki_Out;
+ 196          
+ 197            if(PID_Out > PID->OutMax)
+ 198            {
+ 199              PID_Out = PID->OutMax;                                 // PID最高输出
+ 200            }
+ 201            if(PID_Out < PID->OutMin)
+ 202            {
+ 203              PID_Out = PID->OutMin;                                 // PID最低输出
+ 204            }
+ 205            PID->Out = PID_Out;
+ 206          
+ 207            return PID->Out;
+ 208          }
+ 209          
+ 210          /*-------------------------------------------------------------------------------------------------
+ 211            Function Name : void PI_Init(void)
+ 212            Description   : PI模块初始化
+ 213            Input         : 无
+ 214            Output        : 无
+ 215          -------------------------------------------------------------------------------------------------*/
+ 216          void PI_Init(void)
+ 217          {
+ 218          /*-------------------------------------------------------------------------------------------------
+ 219            PI数据格式
+ 220            Q = PIRANGE + 8(Q8~Q23数据格式)
+ 221            给寄存器赋值时要统一数据格式
+ 222          -------------------------------------------------------------------------------------------------*/
+ 223            SetBit(SV_CR, PIRANGE3, 0);                             // 0100: 12bit PI
+ 224            SetBit(SV_CR, PIRANGE2, 1);
+ 225            SetBit(SV_CR, PIRANGE1, 0);
+ 226            SetBit(SV_CR, PIRANGE0, 0);                              // PI截位Q=PIRANGE+8，即PI数据格式
+ 227          
+ 228            PI_KP = 0;                                               // 寄存器数据类型：int16 Q12格式，PI_KP=Kp*2^12�
+             -��
+ 229            PI_KI = 0;                                               // 寄存器数据类型：int16 Q12格式，PI_KI=Kp*2^12
+ 230            PI_EK = 0;
+ 231            PI_UK = 0;                                               // 寄存器数据类型：int16
+ 232            PI_UKMAX = 0;                                            // 寄存器数据类型：int16
+ 233            PI_UKMIN = 0;                                            // 寄存器数据类型：int16
+ 234          }
+ 235          
+ 236          /*-------------------------------------------------------------------------------------------------
+ 237            Function Name : int16 PIDControl(PID_TypeDef *PID, int16 Ref, int16 Cur)
+C51 COMPILER V9.52.0.0   PID                                                               08/28/2018 10:18:49 PAGE 5   
+
+ 238            Description   : PI调节函数
+ 239            Input         : PID--PI调节对象数组
+ 240                            Ref--PI调节参考目标
+ 241                            Cur--PI当前输入
+ 242            Output        : Out--PI调节输出
+ 243          -------------------------------------------------------------------------------------------------*/
+ 244          int16 PI_Control(PID_TypeDef *PID, int16 Ref, int16 Cur)
+ 245          {
+ 246            static uint8 *PIDType = 0;
+ 247          
+ 248            /*PI运算时间10us*/
+ 249            FlagStartPI = 1;
+ 250            while(FlagStartPI)                                       // MDU分时复用标志
+ 251            {
+ 252              FlagStartPI = 0;
+ 253          
+ 254              /*指针类型数据判断执行时间2.5us*/
+ 255              if(PIDType != PID)                                     // 通过PID数据地址获取PID类型，
+ 256              {
+ 257                PIDType = PID;
+ 258          
+ 259                PI_KP = PID->Kp;                                     // 寄存器数据类型：int16 Q12格式，PI_KP=Kp*2^12�
+             -��
+ 260                PI_KI = PID->Ki;                                     // 寄存器数据类型：int16 Q12格式，PI_KI=Kp*2^12
+ 261                PI_EK = PID->Err;
+ 262                PI_UK = PID->Out;                                    // 寄存器数据类型：int16
+ 263                PI_UKMAX = PID->OutMax;                              // 寄存器数据类型：int16
+ 264                PI_UKMIN = PID->OutMin;                              // 寄存器数据类型：int16
+ 265          
+ 266                SetBit(SV_CR,PISTA,1);                               // 启动PI
+ 267                _nop_();
+ 268                _nop_();
+ 269                _nop_();
+ 270                _nop_();
+ 271                _nop_();                                             // 等待PI运算完成,PI_LastErr初始化成
+ 272          
+ 273              }
+ 274              /*赋值运算时间3.2us*/
+ 275              PID->Err = Ref - Cur;                                  // 计算PID当前偏差
+ 276          
+ 277              /*PI硬核运算时间1.8us*/
+ 278              PI_EK = PID->Err;                                      // PI输入
+ 279              PI_UK = PID->Out;                                      // 寄存器数据类型：int16
+ 280              SetBit(SV_CR,PISTA,1);
+ 281              _nop_();
+ 282              _nop_();
+ 283              _nop_();
+ 284              _nop_();
+ 285              _nop_();
+ 286              PID->Out = PI_UK;                                       // PI输出
+ 287            }
+ 288            FlagStartPI = 1;
+ 289          
+ 290            return PID->Out;
+ 291          }
+ 292          
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  2 ERROR(S)

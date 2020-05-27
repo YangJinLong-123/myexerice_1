@@ -1,0 +1,219 @@
+C51 COMPILER V9.52.0.0   MAIN                                                              04/16/2020 10:07:49 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Output\main.obj
+COMPILER INVOKED BY: D:\Keil4\C51\BIN\C51.EXE ..\User\Source\Application\main.c LARGE OMF2 WARNINGLEVEL(0) OPTIMIZE(5,SP
+                    -EED) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\main.lst) TABS(2) OB
+                    -JECT(.\Output\main.obj)
+
+line level    source
+
+   1          /**************************** (C) COPYRIGHT 2017 Fortiortech shenzhen *****************************
+   2          * File Name          : main.c
+   3          * Author             : Fortiortech Appliction Team
+   4          * Version            : V1.0
+   5          * Date               : 2017-12-27
+   6          * Description        : This file contains main function used for Motor Control.
+   7          ***************************************************************************************************
+   8          * All Rights Reserved
+   9          **************************************************************************************************/
+  10          
+  11          /* Includes -------------------------------------------------------------------------------------*/
+  12          // #include <main.h>
+  13          #include <FU68xx_2.h>
+  14          #include <Myproject.h>
+  15          
+  16          /* Private typedef ------------------------------------------------------------------------------*/
+  17          /* Private define -------------------------------------------------------------------------------*/
+  18          /* Private macro --------------------------------------------------------------------------------*/
+  19          /* Private variables ----------------------------------------------------------------------------*/
+  20          /* Private function prototypes ------------------------------------------------------------------*/
+  21          /* Private functions ----------------------------------------------------------------------------*/
+  22          void SoftwareInit(void);
+  23          void HardwareInit(void);
+  24          void DebugSet(void);
+  25          void MotorControlInit(void);
+  26          
+  27          extern uint32 Temp_value;
+  28          
+  29          uint8 test_flag = 0;
+  30          /*-------------------------------------------------------------------------------------------------
+  31                  Function Name : void main(void)
+  32                  Description   : 主函数主要功能是初始化，包括上电等待，软件初始化，硬件�
+             -��始化，调试模式设置，主循环扫描。
+  33                                              软件初始化--初始化所有定义的变量
+  34                                              硬件初始化--初始化硬件设备配置
+  35                                              调试模式设置--调试模式
+  36                  Input         : 无
+  37                  Output        : 无
+  38          -------------------------------------------------------------------------------------------------*/
+  39          void main(void)
+  40          {
+  41   1          uint16 PowerUpCnt = 0;
+  42   1        
+  43   1          Temp_value = Temperature_Off;
+  44   1          test_flag = 0;
+  45   1          for(PowerUpCnt=0;PowerUpCnt<SystemPowerUpTime;PowerUpCnt++){};
+  46   1      
+  47   1          if((SW1==0)&&(SW2==0))
+  48   1          {
+  49   2            test_flag = 1;
+  50   2          }       
+  51   1          /*Software Init*/
+  52   1          SoftwareInit();
+C51 COMPILER V9.52.0.0   MAIN                                                              04/16/2020 10:07:49 PAGE 2   
+
+  53   1      
+  54   1          /*Hardware Init*/
+  55   1          HardwareInit();
+  56   1      
+  57   1          /*调试模式设置--内部变量查询；CMP输出查询；ADC触发信号查询*/
+  58   1          DebugSet();
+  59   1            
+  60   1          LEDControl();                 //上电点亮
+  61   1      
+  62   1          while(1)
+  63   1          {
+  64   2            GetCurrentOffset();                                                     // 电流偏置的获取
+  65   2            MC_Control();                                                           // 主控函数，状态扫描 2.6k
+  66   2      
+  67   2            #if (!StartONOFF_Enable)                                                // 调速方式
+  68   2                #if (SPEED_MODE == PWMMODE)                                         // PWM调速模式
+              //                PWMInputCapture();                                            // PWM duty调速模式
+                            PWMScan();                                                      // PWM调频调速模式
+              
+                        #elif (SPEED_MODE == NONEMODE)                                      // 直接上电运行模式
+  73   2                    mcSpeedRamp.FlagONOFF   = 1;
+  74   2      //                mcSpeedRamp.TargetValue = _Q15(60000 / MOTOR_SPEED_BASE);
+  75   2                #endif
+  76   2            #endif
+  77   2          }
+  78   1      }
+  79          /*-------------------------------------------------------------------------------------------------
+  80                  Function Name : void DebugSet(void)
+  81                  Description   : 调试模式配置
+  82                  Input         : 无
+  83                  Output        : 无
+  84          -------------------------------------------------------------------------------------------------*/
+  85          void DebugSet(void)
+  86          {
+  87   1          #if defined (SPI_DBG_HW)                                                    // 硬件调试模式
+                      Set_DBG_DMA(&HARD_SPIDATA);
+                  #elif defined (SPI_DBG_SW)                                                  // 软件调试模式
+                      Set_DBG_DMA(spidebug);
+                  #endif
+  92   1      
+  93   1          #if defined (SPI_DBG_HW) && defined (SPI_DBG_SW)
+                      #error Only one DBG mode can be selected
+                  #endif
+  96   1      
+  97   1          SetReg(CMP_CR3, DBGSEL0 | DBGSEL1,  GP01_DBG_Conf);
+  98   1          SetReg(CMP_CR3, CMPSEL0 | CMPSEL1 | CMPSEL2, GP07_DBG_Conf);
+  99   1      }
+ 100          
+ 101          /*-------------------------------------------------------------------------------------------------
+ 102                  Function Name : void SoftwareInit(void)
+ 103                  Description   : 软件初始化，初始化所有定义变量，按键初始化扫描
+ 104                  Input         : 无
+ 105                  Output        : 无
+ 106          -------------------------------------------------------------------------------------------------*/
+ 107          void SoftwareInit(void)
+ 108          {
+ 109   1          /****初始化所有定义的参数变量****/
+ 110   1          MotorcontrolInit();
+ 111   1        
+ 112   1         /******按键初始化******/
+ 113   1          KeyInit();
+ 114   1        
+C51 COMPILER V9.52.0.0   MAIN                                                              04/16/2020 10:07:49 PAGE 3   
+
+ 115   1        /******LED初始化******/
+ 116   1          LEDControlInit();
+ 117   1        
+ 118   1          /****电机初始状态为mcReady，故障保护为无故障******/
+ 119   1          mcState = mcReady;
+ 120   1          mcFaultSource = 0;
+ 121   1      }
+ 122          
+ 123          /*-------------------------------------------------------------------------------------------------
+ 124                  Function Name : void HardwareInit(void)
+ 125                  Description   : 硬件初始化，初始化需要使用的硬件设备配置，FOC必须配置的�
+             -��运放电压、运放初始化、ADC初始化、Driver初始化
+ 126                                              TIM4初始化，其他的可根据实际需求加。
+ 127                  Input         : 无
+ 128                  Output        : 无
+ 129          -------------------------------------------------------------------------------------------------*/
+ 130          void HardwareInit(void)
+ 131          {
+ 132   1      
+ 133   1          // 为提高芯片的抗干扰能力，降低芯片功耗，请在具体项目时，将不需要用的
+             -GPIO默认都配置为输入上拉。
+ 134   1          // 具体配置可在GPIO_Default_Init设置。
+ 135   1          //    GPIO_Default_Init();
+ 136   1      
+ 137   1          /******硬件FO过流，比较器初始化，用于硬件过流比较保护******/
+ 138   1          #if (HardwareCurrent_Protect == Hardware_FO_Protect)                        //外部中断初始化，用于外�
+             -�中断硬件过流FO的保护
+                      EXTI_Init();
+                  #elif (HardwareCurrent_Protect == Hardware_CMP_Protect)                     //选择比较过流，比较器初�
+             -��化
+ 141   1              CMP3_Init();
+ 142   1          #elif (HardwareCurrent_Protect == Hardware_FO_CMP_Protect)                  //两者都选择
+                      EXTI_Init();
+                      CMP3_Init();
+                  #endif
+ 146   1      
+ 147   1          //  Sleepmode_Init();
+ 148   1         
+ 149   1          /****功能IO初始化***********/
+ 150   1          GPIO_Init();
+ 151   1          
+ 152   1         /****过零检测外部中断初始化***********/
+ 153   1          ZeroCrossing_Init();
+ 154   1      
+ 155   1          /*****运算放大器初始化*********/
+ 156   1          AMP_Init();
+ 157   1      
+ 158   1          /*****ADC初始化*********/
+ 159   1          ADC_Init();
+ 160   1          /****比较器中断配置***********/
+ 161   1          CMP3_Inter_Init();                                                          // 建议和比较器初始化间隔一段
+             -时间
+ 162   1      
+ 163   1          /*****Driver初始化*********/
+ 164   1          Driver_Init();
+ 165   1          /*****UART初始化*********/
+ 166   1          // UART_Init();//未配置
+ 167   1      
+ 168   1          #if defined (SPI_DBG_HW) | defined (SPI_DBG_SW)                             // 调试模式
+              //      SPI_Init();                                                             //调试模式下，占用SPI端口的NSS(GP04),MOSI(GP05)
+             -,SCK(GP06)
+                  #endif
+C51 COMPILER V9.52.0.0   MAIN                                                              04/16/2020 10:07:49 PAGE 4   
+
+ 171   1          /*****Timer初始化*******/
+ 172   1      //    TIM2_Init();                                                            //端口GP07 & GP10
+ 173   1          TIM3_Init();                                                                //端口GP11,采样定时器3中断作为PWM捕获中断
+ 174   1          TIM4_Init();//端口GP01
+ 175   1          TIM1ms_Init();                                                              //采用1ms定时器中断作为常见中断,处理故障
+             -保护等附加功能
+ 176   1       }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    130    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      1    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

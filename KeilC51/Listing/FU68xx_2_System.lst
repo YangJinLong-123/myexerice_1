@@ -1,0 +1,197 @@
+C51 COMPILER V9.52.0.0   FU68XX_2_SYSTEM                                                   04/08/2020 15:43:41 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE FU68XX_2_SYSTEM
+OBJECT MODULE PLACED IN .\Output\FU68xx_2_System.obj
+COMPILER INVOKED BY: D:\Keil4\C51\BIN\C51.EXE ..\Library\FU68xx_Hardware_Driver\Source\FU68xx_2_System.c LARGE OMF2 WARN
+                    -INGLEVEL(0) OPTIMIZE(5,SPEED) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Lis
+                    -ting\FU68xx_2_System.lst) TABS(2) OBJECT(.\Output\FU68xx_2_System.obj)
+
+line level    source
+
+   1          /**************************** (C) COPYRIGHT 2017 Fortiortech shenzhen *****************************
+   2          * File Name          : FU68xx_2_System.c
+   3          * Author             : Fortiortech  Appliction Team
+   4          * Version            : V1.0
+   5          * Date               : 10-Apr-2017
+   6          * Description        : This file contains the system function used for Motor Control.
+   7          ***************************************************************************************************
+   8          * All Rights Reserved
+   9          **************************************************************************************************/
+  10          /* Includes -------------------------------------------------------------------------------------*/
+  11          #include <FU68xx_2.h>
+  12          
+  13          
+  14          /*-------------------------------------------------------------------------------------------------
+  15              Function Name : VREFConfig(Value, Status)
+  16              Description   : 参考电压VREF配置，如果使能VREF模块，则内部产生VREF输入到ADC作�
+             -�ADC
+  17                                              参考电压，如果禁止VREF模块，则由外部提供VREF输入�
+             -�ADC作为ADC参考电压。
+  18              Input         : Value--VCC低电压预警值
+  19                            0: VREF4_5, 参考电压VREF输出为4.5V
+  20                            1: VREF5_0, 参考电压VREF输出为5.0V
+  21                            2: VREF3_0, 参考电压VREF输出为3.0V
+  22                            3: VREF4_0, 参考电压VREF输出为4.0V
+  23                            Statue--使能控制，Disable或Enable。
+  24            Output                :   None
+  25          -------------------------------------------------------------------------------------------------*/
+  26          void VREFConfig(uint8 Value, bool Status)
+  27          {
+  28   1          switch(Value)
+  29   1          {
+  30   2              case 0: ClrBit(VREF_VHALF_CR, VRVSEL0 | VRVSEL1);          break;
+  31   2              case 1: SetReg(VREF_VHALF_CR, VRVSEL0 | VRVSEL1, VRVSEL0); break;
+  32   2              case 2: SetReg(VREF_VHALF_CR, VRVSEL0 | VRVSEL1, VRVSEL1); break;
+  33   2              case 3: SetBit(VREF_VHALF_CR, VRVSEL0 | VRVSEL1);          break;
+  34   2          }
+  35   1      
+  36   1          SetReg(VREF_VHALF_CR, VREFEN, (Status ? VREFEN : 0x00));
+  37   1      }
+  38          
+  39          
+  40          /*-------------------------------------------------------------------------------------------------
+  41              Function Name : VHALFConfig(Mode, Status)
+  42              Description   : 基准电压VHALF配置，使能VHALF工作模块，选择VREF/2作为基准
+  43                                              电压VHALF输出，VHALF可用作运放基准电压。
+  44              Input         : Statue--使能控制，0-Disable或1-Enable。
+  45            Output                :   None
+  46          -------------------------------------------------------------------------------------------------*/
+  47          void VHALFConfig(bool Status)
+  48          {
+  49   1          SetReg(VREF_VHALF_CR, VHALFEN, (Status ? VHALFEN : 0x00));
+  50   1      }
+  51          
+C51 COMPILER V9.52.0.0   FU68XX_2_SYSTEM                                                   04/08/2020 15:43:41 PAGE 2   
+
+  52          /* WatchDog Config-------------------------------------------------------------------------------*/
+  53          
+  54          /*-------------------------------------------------------------------------------------------------
+  55              Function Name ：WatchDogConfig(Value ,Status)
+  56              Description   ：看门狗定时函数初始化，看门狗使能和复位使能，定时配置
+  57              Input         ：Value--定时时间，单位ms，最小定时时间8ms，最大定时1800ms
+  58                            Statue--使能控制，Disable或Enable
+  59            Output                ：None
+  60          -------------------------------------------------------------------------------------------------*/
+  61          void WatchDogConfig(uint16 Value, bool Status)
+  62          {
+  63   1          SetReg(CCFG1, WDTEN, (Status ? WDTEN : 0x00));
+  64   1          WDT_REL = ((uint16)(65532-(uint32)Value*32768/1000) >> 8);
+  65   1          ClrBit(WDT_CR, WDTF);
+  66   1          SetBit(WDT_CR, WDTRF);
+  67   1      }
+  68          
+  69          
+  70          /*-------------------------------------------------------------------------------------------------
+  71              Function Name ：WatchDogRefresh(Value ,Status)
+  72              Description   ：刷新看门狗计数器
+  73              Input         ：None
+  74            Output                ：None
+  75          -------------------------------------------------------------------------------------------------*/
+  76          void WatchDogRefresh(void)
+  77          {
+  78   1          SetBit(WDT_CR, WDTRF);
+  79   1      }
+  80          
+  81          /* Flash Program Config--------------------------------------------------------------------------*/
+  82          
+  83          /*-------------------------------------------------------------------------------------------------
+  84              Function Name : uint8 Flash_Sector_Erase(uint8 xdata *FlashAddress)
+  85              Description   : 扇区自擦除: 指定将要擦除的Flash扇区，每个扇区128Byte，共128个扇
+             -区，
+  86                                              扇区0~127对应Flash地址0x0000~0x3fff，通过指定Flash地址来
+             -指定要擦除
+  87                                              的Flash地址所在扇区。一次只能擦除一个扇区，自擦�
+             -�数据为任意值，一定
+  88                                              要在解锁后才给DPTR赋值。
+  89              Input         : FlashAddress--Flash自擦除扇区内任意地址
+  90            Output                :   0--Flash自擦除成功，1--Flash自擦除失败
+  91          -------------------------------------------------------------------------------------------------*/
+  92          uint8 Flash_Sector_Erase(uint8 xdata *FlashAddress)
+  93          {
+  94   1          bool TempEA;
+  95   1      
+  96   1          TempEA = EA;
+  97   1          EA = 0;
+  98   1      
+  99   1          if(FlashAddress < 0x3f80)       // 不擦除最后一个扇区
+ 100   1          {
+ 101   2              FLA_CR = 0x03;                                   //使能自擦除
+ 102   2              FLA_KEY = 0x5a;
+ 103   2              FLA_KEY = 0x1f;                                   //flash预编程解锁
+ 104   2              _nop_();
+ 105   2              *FlashAddress = 0xff;                   //写任意数据
+ 106   2              FLA_CR = 0x08;                                   //开始预编程，完成后Flash再次上锁
+ 107   2          }
+ 108   1      
+ 109   1          EA = TempEA;
+ 110   1      
+C51 COMPILER V9.52.0.0   FU68XX_2_SYSTEM                                                   04/08/2020 15:43:41 PAGE 3   
+
+ 111   1          if(ReadBit(FLA_CR, FLAERR))
+ 112   1          {
+ 113   2              return 1;
+ 114   2          }
+ 115   1          else
+ 116   1          {
+ 117   2              return 0;
+ 118   2          }
+ 119   1      }
+ 120          
+ 121          /*-------------------------------------------------------------------------------------------------
+ 122              Function Name : uint8 Flash_Sector_Write(uint8 xdata *FlashAddress, uint8 FlashData)
+ 123              Description   : Flash自烧写: 对扇区预编程和自擦除后，可以对扇区内的地址进行F
+             -lash烧写，
+ 124                            一次烧写一个byte,一定要在解锁后才给DPTR赋值
+ 125              Input         : FlashAddress--Flash烧写地址
+ 126                                              FlashData--Flash烧写数据
+ 127            Output                :   0--Flash自烧写成功，1--Flash自烧写失败
+ 128          -------------------------------------------------------------------------------------------------*/
+ 129          uint8 Flash_Sector_Write(uint8 xdata *FlashAddress, uint8 FlashData)
+ 130          {
+ 131   1          bool TempEA;
+ 132   1      
+ 133   1          TempEA = EA;
+ 134   1          EA = 0;
+ 135   1      
+ 136   1        if(FlashAddress < 0x3f80)         // 不编程最后一个扇区
+ 137   1          {
+ 138   2              FLA_CR = 0x01;              // 使能Flash编程
+ 139   2              FLA_KEY = 0x5a;
+ 140   2              FLA_KEY = 0x1f;             // flash预编程解锁
+ 141   2              _nop_();
+ 142   2              *FlashAddress = FlashData;  // 写编程数据
+ 143   2              FLA_CR = 0x08;              // 开始预编程，完成后Flash再次上锁
+ 144   2          }
+ 145   1      
+ 146   1          EA = TempEA;
+ 147   1      
+ 148   1          if(ReadBit(FLA_CR, FLAERR))
+ 149   1          {
+ 150   2              return 1;
+ 151   2          }
+ 152   1          else
+ 153   1          {
+ 154   2              return 0;
+ 155   2          }
+ 156   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    267    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----       5
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+C51 COMPILER V9.52.0.0   FU68XX_2_SYSTEM                                                   04/08/2020 15:43:41 PAGE 4   
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

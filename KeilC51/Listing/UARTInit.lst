@@ -1,0 +1,110 @@
+C51 COMPILER V9.52.0.0   UARTINIT                                                          04/16/2020 10:07:52 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE UARTINIT
+OBJECT MODULE PLACED IN .\Output\UARTInit.obj
+COMPILER INVOKED BY: D:\Keil4\C51\BIN\C51.EXE ..\User\Source\Hardware\UARTInit.c LARGE OMF2 WARNINGLEVEL(0) OPTIMIZE(5,S
+                    -PEED) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\UARTInit.lst) TABS(
+                    -2) OBJECT(.\Output\UARTInit.obj)
+
+line level    source
+
+   1          /**************************** (C) COPYRIGHT 2017 Fortiortech shenzhen *****************************
+   2          * File Name          : UARTInit.c
+   3          * Author             : Fortiortech  Appliction Team
+   4          * Version            : V1.0
+   5          * Date               : 10-Apr-2017
+   6          * Description        : This file contains UART initial function used for Motor Control.
+   7          ***************************************************************************************************
+   8          * All Rights Reserved
+   9          **************************************************************************************************/
+  10          #include <FU68xx_2.h>
+  11          #include <Myproject.h>
+  12          /* Private variables ----------------------------------------------------------------------------*/
+  13          MCUART Uart;
+  14          
+  15          void UART_Init(void)
+  16          {
+  17   1          SetBit(PH_SEL, UARTEN);     //p0[6]as UART_RXD; p0[5]as UART_TXD
+  18   1          UT_MOD1 = 0;
+  19   1          UT_MOD0 = 1;                //8bit波特率可变UART模式
+  20   1          SM2 = 0;                    //禁止Mode2和Mode3多机通讯
+  21   1          REN = 1;                    //使能接收
+  22   1          ES0 = 0;                    //先关中断
+  23   1      
+  24   1          PUART1=0;                   //中断优先级时最低
+  25   1          PUART0=0;
+  26   1      
+  27   1          UT_BAUD =0x9b;              //default baudrate:9600-0x9b,1200-0x4E1
+  28   1          ES0 = 1;                    //发送/接受中断使能
+  29   1      }
+  30          
+  31          void UartTxdate(uint16* sndBuf, int32 len)
+  32          {
+  33   1          uint16 i=0;
+  34   1        for(i=0;i<len;i++)
+  35   1        {
+  36   2          UART_SendData(*sndBuf++);
+  37   2        }
+  38   1      }
+  39          
+  40          void UART_SendData(unsigned char T_Data)
+  41          {
+  42   1          UT_DR = T_Data;
+  43   1          while(!(TI==1));        //等待发送完成
+  44   1          TI = 0;                 //发送完成中断标志位清零
+  45   1      }
+  46          
+  47          /***************处理串口接收到的数据************/
+  48          void UartDealResponse(void)
+  49          {
+  50   1        
+  51   1      }
+  52          
+  53          void UartDealComm(void)
+C51 COMPILER V9.52.0.0   UARTINIT                                                          04/16/2020 10:07:52 PAGE 2   
+
+  54          {
+  55   1         uint16 j=0;
+  56   1         uint16 checkdate=0x00;
+  57   1         if(Uart.ResponceFlag==1)//10ms
+  58   1         {
+  59   2             UartDealResponse();
+  60   2             Uart.T_DATA[0]     = 0xaa;
+  61   2             Uart.T_DATA[1]     = mcState;
+  62   2             Uart.T_DATA[2]     = (uint16)(((int32)mcFocCtrl.SpeedFlt*2400)>>19);// actual speed/16 ,if actual spee
+             -d=1000rpm/min,then TxBuf[2]=63
+  63   2             Uart.T_DATA[3]     = (uint16)(((int32)mcFocCtrl.mcDcbusFlt*626)>>16);// DC bus feedback, 1 stand for 2
+             -V
+  64   2             Uart.T_DATA[4]     = mcFaultSource;//Fault state
+  65   2             Uart.T_DATA[5]     = 0x00;
+  66   2             Uart.T_DATA[6]     = 0x00;
+  67   2             Uart.T_DATA[7]     = 0x00;
+  68   2             for( j = 0; j < 7; j++ )
+  69   2             {
+  70   3              checkdate += Uart.T_DATA[j];
+  71   3             }
+  72   2             Uart.T_DATA[8]     = checkdate;
+  73   2             Uart.T_DATA[9]     = 0x55;
+  74   2             UartTxdate(Uart.T_DATA,10);
+  75   2             Uart.ResponceFlag=0;
+  76   2         }
+  77   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    403    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     57      13
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

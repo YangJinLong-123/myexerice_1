@@ -1,0 +1,427 @@
+C51 COMPILER V9.52.0.0   RSDDETECT                                                         04/16/2020 10:07:50 PAGE 1   
+
+
+C51 COMPILER V9.52.0.0, COMPILATION OF MODULE RSDDETECT
+OBJECT MODULE PLACED IN .\Output\RSDDetect.obj
+COMPILER INVOKED BY: D:\Keil4\C51\BIN\C51.EXE ..\User\Source\Function\RSDDetect.c LARGE OMF2 WARNINGLEVEL(0) OPTIMIZE(5,
+                    -SPEED) BROWSE INCDIR(..\Library\FU68xx_Hardware_Driver\Include;..\User\Include) DEBUG PRINT(.\Listing\RSDDetect.lst) TAB
+                    -S(2) OBJECT(.\Output\RSDDetect.obj)
+
+line level    source
+
+   1          /**************************** (C) COPYRIGHT 2017 Fortiortech shenzhen *****************************
+   2          * File Name          : RSDDetect.c
+   3          * Author             : Fortiortech  Appliction Team
+   4          * Version            : V1.0
+   5          * Date               : 10-Apr-2017
+   6          * Description        : This file contains init speed detection used for Motor Control.
+   7          ***************************************************************************************************
+   8          * All Rights Reserved
+   9          **************************************************************************************************/
+  10          
+  11          
+  12          /* Includes -------------------------------------------------------------------------------------*/
+  13          #include <FU68xx_2.h>
+  14          #include <Myproject.h>
+  15          
+  16          /* Private typedef ------------------------------------------------------------------------------*/
+  17          /* Private define -------------------------------------------------------------------------------*/
+  18          /* Private macro --------------------------------------------------------------------------------*/
+  19          /* Private variables ----------------------------------------------------------------------------*/
+  20          /* Private function prototypes ------------------------------------------------------------------*/
+  21          /* Private functions ----------------------------------------------------------------------------*/
+  22          
+  23          /*---------------------------------------------------------------------------*/
+  24          /* Name   : void RSDDetectInit(void)
+  25          /* Input  : NO
+  26          /* Output : NO
+  27          /* Description: RSD初始化
+  28          /*---------------------------------------------------------------------------*/
+  29          void RSDDetectInit(void)
+  30          {
+  31   1        MOE = 0;
+  32   1      
+  33   1        RSDDetect.RSDStepTime[0]= 0;
+  34   1        RSDDetect.RSDStepTime[1]= 0;
+  35   1        RSDDetect.RSDStepTime[2]= 0;
+  36   1        RSDDetect.RSDStepTime[3]= 0;
+  37   1        RSDDetect.RSDTimes   = 0;
+  38   1        RSDDetect.RSDPeriod  = 0;
+  39   1        RSDDetect.RSDCount   = 0;
+  40   1        RSDDetect.RSDState   = Static;
+  41   1        RSDDetect.RSDSpeed   = 0;
+  42   1        RSDDetect.RSDDIR     = 0;
+  43   1        RSDDetect.RSDFlag    = 0;
+  44   1        RSDDetect.RSDStep    = 0;
+  45   1        RSDDetect.RSDBRFlag  = 0;
+  46   1          
+  47   1        ClrBit(DRV_CR, FOCEN);  // 关闭FOC
+  48   1        
+  49   1        CMP_RSD_Init();
+  50   1        Time2_RSD_Init();       // RSD用的是Time2
+  51   1      }
+  52          /*---------------------------------------------------------------------------*/
+  53          /* Name   : void CMP_RSD_Init(void)
+C51 COMPILER V9.52.0.0   RSDDETECT                                                         04/16/2020 10:07:50 PAGE 2   
+
+  54          /* Input  : NO
+  55          /* Output : NO
+  56          /* Description: RSD对CMP的初始化
+  57          /*---------------------------------------------------------------------------*/
+  58          void CMP_RSD_Init(void)
+  59          {
+  60   1      /*-------------------------------------------------------------------------------------------------
+  61   1        CMP Input Pin Mode
+  62   1         P1.4--CMP0_IN+, P1.6--CMP1_IN+, P2.1--CMP2_IN+
+  63   1         P1.5--CMP0_IN-, P1.7--CMP1_IN-, P2.2--CMP2_IN-
+  64   1         P1.3--CMP1P2
+  65   1      -------------------------------------------------------------------------------------------------*/
+  66   1        SetBit(P1_AN, P14 | P15 | HBMOD);                                   // 
+  67   1        ClrBit(P1_OE,P13);
+  68   1      /*-------------------------------------------------------------------------------------------------
+  69   1        CMP0_MOD：
+  70   1        00： 无内置虚拟中心点电阻的BEMF模式
+  71   1        01：  内置虚拟中心点电阻的BEMF模式
+  72   1        10：  3差分比较器模式
+  73   1        11：  2比较器模式RSD
+  74   1      -------------------------------------------------------------------------------------------------*/
+  75   1        SetReg(CMP_CR2, CMP0MOD0 | CMP0MOD1, CMP0MOD0 | CMP0MOD1);
+  76   1      
+  77   1      /*-------------------------------------------------------------------------------------------------
+  78   1        比较器输出选择配置，与CMP0_MOD配合使用
+  79   1        CMP0_SEL[1:0]=00，比较器0工作在2比较器轮询模式，正端在CMP0P、CMP1P2之间自动轮流�
+             -��择，负端固定接CMP0M，
+  80   1                          其输出结果分别送至CMP0_OUT、CMP1_OUT
+  81   1        CMP0_SEL[1:0]=01，比较器0选择CMP0对应的端口组合，即正端接CMP0P，负端接CMP0M，输�
+             -�接CMP0_OUT
+  82   1        CMP0_SEL[1:0]=10，比较器0选择CMP1对应的端口组合，即正端接CMP1P2，负端接CMP0M，输�
+             -��接CMP1_OUT
+  83   1      -----------------------------------------------------------------------------*/
+  84   1        SetReg(CMP_CR2, CMP0SEL0 | CMP0SEL1, 0x00);
+  85   1      
+  86   1      /*-------------------------------------------------------------------------------------------------
+  87   1        比较器迟滞电压选择
+  88   1        000: 无迟滞   001: ±2.5mV   010: -5mV   011: +5mV
+  89   1        100: +-5mV   101: -10mV   110: +10mV   111: +-10mV
+  90   1      -------------------------------------------------------------------------------------------------*/
+  91   1        SetReg(CMP_CR1, CMP0HYS0 | CMP0HYS1 | CMP0HYS2, CMP0HYS0 | CMP0HYS1 | CMP0HYS2 );
+  92   1      
+  93   1      /*-------------------------------------------------------------------------------------------------
+  94   1        CMP0的轮询时间设置
+  95   1      -------------------------------------------------------------------------------------------------*/
+  96   1        SetReg(CMP_CR1, CMP0CSEL0 | CMP0CSEL1, 0x00);
+  97   1      
+  98   1        EA = 0;
+  99   1      
+ 100   1      /**------------------------------------------------------
+ 101   1      使能比较器CMP0,CMP1,CMP2和ADC在pwm on/off采样功能
+ 102   1      
+ 103   1      00：在on和off均采样，没有延迟采样开启
+ 104   1      01：只在off采样，根据CMP_SAMR延迟采样开启
+ 105   1      10：只在on采样，根据CMP_SAMR延迟采样开启
+ 106   1      11：在on和off均采样，根据CMP_SAMR延迟采样开启
+ 107   1      ---------------------------------------------------------**/
+ 108   1        SetReg(CMP_CR3, SAMSEL0 | SAMSEL1, 0);
+ 109   1      
+ 110   1        /**采样延迟设置**/
+ 111   1        CMP_SAMR = 0x10;
+ 112   1      
+C51 COMPILER V9.52.0.0   RSDDETECT                                                         04/16/2020 10:07:50 PAGE 3   
+
+ 113   1        SetBit(CMP_CR2, CMP0EN);//使能比较器
+ 114   1      }
+ 115          /*---------------------------------------------------------------------------*/
+ 116          /* Name   : void Time2_RSD_Init(void)
+ 117          /* Input  : NO
+ 118          /* Output : NO
+ 119          /* Description: RSD对应Time2的初始化
+ 120          /*---------------------------------------------------------------------------*/
+ 121          void Time2_RSD_Init(void)
+ 122          {
+ 123   1        /*-------------------------------------------------------------------------------------------------
+ 124   1        先停止计数，配置完寄存器后，最后启动计数
+ 125   1      -------------------------------------------------------------------------------------------------*/
+ 126   1        ClrBit(TIM2_CR1, T2EN);                                // 0，停止计数；1,使能计数
+ 127   1      
+ 128   1      /*-------------------------------------------------------------------------------------------------
+ 129   1        时钟分频设置(T2PSC)
+ 130   1        000:cpuclk(24MHz)     001:cpuclk/2^1(12MHz) 010:cpuclk/2^2(6MHz)  011:cpuclk/2^3(3MHz)
+ 131   1        100:cpuclk/2^4(1.5MHz)  101:cpuclk/2^5(750KHz)  110:cpuclk/2^6(375KHz)  111:cpuclk/2^7(187.5KHz)
+ 132   1      -------------------------------------------------------------------------------------------------*/
+ 133   1        SetReg(TIM2_CR0, T2PSC0 | T2PSC1 | T2PSC2, T2PSC0 | T2PSC1 | T2PSC2);
+ 134   1      
+ 135   1        /*-------------------------------------------------------------------------------------------------
+ 136   1        /模式选择
+ 137   1        T2MODE1，T2MODE0
+ 138   1        00--输入Timer模式；01--输出模式
+ 139   1        10--输入Count模式；11--QEP或者RSD模式
+ 140   1      -------------------------------------------------------------------------------------------------*/
+ 141   1        SetReg(TIM2_CR0, T2MOD0 | T2MOD1, T2MOD0 | T2MOD1);
+ 142   1      
+ 143   1        SetBit(TIM2_CR1, T2FE);                              // 滤波使能
+ 144   1      /*-------------------------------------------------------------------------------------------------
+ 145   1        清除中断标志位
+ 146   1        禁止PWM周期检测中断使能
+ 147   1        使能计数器上溢中断使能
+ 148   1      -------------------------------------------------------------------------------------------------*/
+ 149   1        ClrBit(TIM2_CR1, T2IR | T2IF | T2IP);                      // 清除中断标志位
+ 150   1        ClrBit(TIM2_CR0, T2CES | T2IRE);                               // 清零脉冲计数器不使能
+ 151   1        SetBit(TIM2_CR1, T2IPE | T2IFE);                               // 输入有效边沿变化中断使能和基�
+             -��计数器上溢使能
+ 152   1        /*-------------------------------------------------------------------------------------------------
+ 153   1        定时器2中断优先级配置及芯片中断总使能
+ 154   1        PTIM231-PTIM230，中断优先级控制值从0-3依次表示优先级从最低到最高，共4级优化�
+             -�控制
+ 155   1        EA,芯片中断总使能
+ 156   1      -------------------------------------------------------------------------------------------------*/
+ 157   1        PTIM21 = 1;
+ 158   1        PTIM20 = 0;                                            // TIM2/2中断优先级别为2
+ 159   1        EA = 1;
+ 160   1      /*-------------------------------------------------------------------------------------------------
+ 161   1        配置周期值、比较值、计数值
+ 162   1      -------------------------------------------------------------------------------------------------*/
+ 163   1        TIM2__CNTR = 0;
+ 164   1        
+ 165   1      /*-----------启动计数------------------------------------------------*/
+ 166   1        SetBit(TIM2_CR1, T2EN);                              //启动计数
+ 167   1      }
+ 168          /*---------------------------------------------------------------------------*/
+ 169          /* Name   : void RSDDetect(void)
+ 170          /* Input  : NO
+ 171          /* Output : NO
+ 172          /* Description: RSD检测，判断正转还是反转
+C51 COMPILER V9.52.0.0   RSDDETECT                                                         04/16/2020 10:07:50 PAGE 4   
+
+ 173          /*---------------------------------------------------------------------------*/
+ 174          void RSDFRDetect(void)
+ 175          {
+ 176   1        RSDDetect.RSDCount=TIM2__CNTR;//注意RSDCount需为IDATA数据类型
+ 177   1         if(RSDDetect.RSDCount < -7)//正转
+ 178   1         {
+ 179   2           RSDDetect.RSDPeriod=(RSDDetect.RSDStepTime[0]+RSDDetect.RSDStepTime[1]+RSDDetect.RSDStepTime[2]+RSDDete
+             -ct.RSDStepTime[3])>>2;
+ 180   2           RSDDetect.RSDDIR=ReadBit(TIM2_CR1,T2DIR);
+ 181   2           ClrBit(TIM2_CR1, T2EN);  //关掉定时器2
+ 182   2           RSDDetect.RSDState=Forward;
+ 183   2           RSDDetect.RSDFlag=1;
+ 184   2         }
+ 185   1         else if(RSDDetect.RSDCount > 7)//反转
+ 186   1         {
+ 187   2           RSDDetect.RSDPeriod=(RSDDetect.RSDStepTime[0]+RSDDetect.RSDStepTime[1]+RSDDetect.RSDStepTime[2]+RSDDete
+             -ct.RSDStepTime[3])>>2;
+ 188   2           RSDDetect.RSDDIR=ReadBit(TIM2_CR1,T2DIR);
+ 189   2           ClrBit(TIM2_CR1, T2EN);  //关掉定时器2        
+ 190   2           RSDDetect.RSDState=Reverse;
+ 191   2           RSDDetect.RSDFlag=1;
+ 192   2         }
+ 193   1         else//多次判断
+ 194   1         {
+ 195   2            RSDDetect.RSDStepTime[RSDDetect.RSDStep]=TIM2__ARR;//将比较器的读值给RSDStep
+ 196   2            RSDDetect.RSDStep++;
+ 197   2            if(RSDDetect.RSDStep>3)
+ 198   2            {
+ 199   3              RSDDetect.RSDStep=0;
+ 200   3            }
+ 201   2         }
+ 202   1         RSDDetect.RSDTimes++;//多次中断，但又没有跳入正反转
+ 203   1         if(RSDDetect.RSDTimes>15)
+ 204   1         {
+ 205   2            RSDDetect.RSDState=Static;
+ 206   2            RSDDetect.RSDFlag=1;
+ 207   2         }
+ 208   1      }
+ 209          /*---------------------------------------------------------------------------*/
+ 210          /* Name   : void RSDDealwith(void)
+ 211          /* Input  : NO
+ 212          /* Output : NO
+ 213          /* Description: RSD处理方式
+ 214          /*---------------------------------------------------------------------------*/
+ 215          void RSDDealwith(void)
+ 216          {
+ 217   1        if(RSDDetect.RSDFlag==1)
+ 218   1        {
+ 219   2          if(RSDDetect.RSDState != Static)//处理速度
+ 220   2          {
+ 221   3             RSDDetect.RSDSpeedBase=RSDSpeedBaseStep;
+ 222   3             RSDDetect.RSDPeriod+=1;
+ 223   3             RSDDetect.RSDSpeed = MDU_DIV_IDATA_U32(&RSDDetect.RSDSpeedBase,&RSDDetect.RSDPeriod);//Q格式的速�
+             -�,此处除法器与过调值不冲突
+ 224   3          }
+ 225   2          if (((RSDDetect.RSDState==Reverse)&&(RSDDetect.RSDDIR==0x00))&&(RSDDetect.RSDSpeed>_Q15(80.0/MOTOR_SPE
+             -ED_BASE))&&(RSDDetect.RSDCCWTimes<4))//反转超过一定速度，且刹车次数小于4次时，进入
+ 226   2          {
+ 227   3              mcFocCtrl.State_Count=1000;
+ 228   3              McStaSet.SetFlag.TailWindSetFlag=0;
+ 229   3              MOE = 0;
+ 230   3              DRV_DR = DRV_ARR+1;
+C51 COMPILER V9.52.0.0   RSDDETECT                                                         04/16/2020 10:07:50 PAGE 5   
+
+ 231   3              DRV_CMR &= 0xFFC0;
+ 232   3              DRV_CMR |= 0x015;                         // 三相下桥臂通，刹车
+ 233   3              ClrBit(DRV_CR, OCS);//OCS = 0, DRV_COMR;OCS = 1, FOC/SVPWM/SPWM
+ 234   3              MOE = 1;
+ 235   3              
+ 236   3              if(RSDDetect.RSDSpeed > _Q15(200.0/MOTOR_SPEED_BASE))//速度超过一定值时，刹车，且置标�
+             -�位，在启动时，根据不同速度设置不同启动电流
+ 237   3              {         
+ 238   4                mcFocCtrl.State_Count=1500;
+ 239   4                RSDDetect.RSDCCWFlag=1;
+ 240   4              }
+ 241   3              else
+ 242   3              {          
+ 243   4                mcFocCtrl.State_Count=800;
+ 244   4                if(RSDDetect.RSDCCWFlag==0)
+ 245   4                RSDDetect.RSDCCWFlag=2;
+ 246   4              }
+ 247   3             RSDDetect.RSDCCWTimes++;
+ 248   3             ClrBit(CMP_CR2, CMP0EN);                                //关闭比较器
+ 249   3             ClrBit(TIM2_CR1, T2EN);                                 // 0，停止计数；1,使能计数
+ 250   3          }
+ 251   2          else if ((RSDDetect.RSDState==Forward)&&(RSDDetect.RSDDIR==0x01))//正转
+ 252   2          {      
+ 253   3            RSDFOCCloseLoopStart();                              
+ 254   3            RSDCloseDeal();
+ 255   3      
+ 256   3            ClrBit(CMP_CR2, CMP0EN);                                 // 关闭比较器
+ 257   3            ClrBit(TIM2_CR1, T2EN);                                  // 0，停止计数；1,使能计数
+ 258   3          }
+ 259   2          else//其他，如静止
+ 260   2          {
+ 261   3            ClrBit(CMP_CR2, CMP0EN);                               // 关闭比较器
+ 262   3            ClrBit(TIM2_CR1, T2EN);                                // 0，停止计数；1,使能计数
+ 263   3            if(RSDDetect.RSDCCWFlag!=0)
+ 264   3            {
+ 265   4               if(RSDDetect.RSDBRFlag==0)                          // 刹车400ms，用以提高逆风情况下的�
+             -�功率
+ 266   4               {
+ 267   5                RSDDetect.RSDCCWSBRCnt=400;
+ 268   5                MOE = 0;
+ 269   5                DRV_DR = DRV_ARR+1;
+ 270   5                DRV_CMR &= 0xFFC0;;
+ 271   5                DRV_CMR |= 0x015;                                  // 三相下桥臂通，刹车
+ 272   5                ClrBit(DRV_CR, OCS);                               // OCS = 0, DRV_COMR;OCS = 1, FOC/SVPWM/SPWM
+ 273   5                MOE = 1;
+ 274   5                RSDDetect.RSDBRFlag=1;
+ 275   5              }
+ 276   4            }
+ 277   3            if((RSDDetect.RSDCCWFlag==0)||(RSDDetect.RSDCCWSBRCnt==0))
+ 278   3            {        
+ 279   4              MOE = 0;
+ 280   4              mcState = mcPosiCheck;
+ 281   4              McStaSet.SetFlag.PosiCheckSetFlag = 0;
+ 282   4              mcFocCtrl.mcPosCheckAngle         = 0xffff;     // 角度赋初值
+ 283   4            }    
+ 284   3          }
+ 285   2        }
+ 286   1      }
+ 287          
+ 288          /*---------------------------------------------------------------------------*/
+ 289          /* Name   : void RSDFOCCloseLoopStart(void)
+ 290          /* Input  : NO
+C51 COMPILER V9.52.0.0   RSDDETECT                                                         04/16/2020 10:07:50 PAGE 6   
+
+ 291          /* Output : NO
+ 292          /* Description: 闭环启动
+ 293          /*---------------------------------------------------------------------------*/
+ 294          void RSDFOCCloseLoopStart(void)
+ 295          {
+ 296   1          /*FOC初始化*/
+ 297   1          FOC_Init();
+ 298   1          /*启动电流、KP、KI*/
+ 299   1          FOC_IDREF = ID_Start_CURRENT;                         // D轴启动电流
+ 300   1          mcFocCtrl.mcIqref= IQ_Start_CURRENT;                  // Q轴启动电流
+ 301   1          FOC_IQREF = mcFocCtrl.mcIqref;                        // Q轴启动电流
+ 302   1      
+ 303   1          FOC_DQKP = DQKP;
+ 304   1          FOC_DQKI = DQKI;
+ 305   1      
+ 306   1          FOC_EFREQACC  = Motor_Omega_Ramp_ACC;
+ 307   1          FOC_EFREQMIN  = Motor_Omega_Ramp_Min;
+ 308   1          FOC_EFREQHOLD = Motor_Omega_Ramp_End;
+ 309   1      
+ 310   1          SetBit(FOC_CR1,ANGM);                             // 估算模式
+ 311   1          ClrBit(FOC_CR1,RFAE);                             // 禁止强拉
+ 312   1          SetBit(FOC_CR1,EFAE);                             // 估算器强制输出
+ 313   1      
+ 314   1          FOC__EOME=RSDDetect.RSDSpeed;
+ 315   1      
+ 316   1          if(RSDDetect.RSDSpeed>_Q15(2400.0/MOTOR_SPEED_BASE))
+ 317   1          {
+ 318   2            FOC__UQ=16000;//
+ 319   2          }  
+ 320   1          else if(RSDDetect.RSDSpeed>_Q15(1800.0/MOTOR_SPEED_BASE))
+ 321   1          {
+ 322   2            FOC__UQ=10000;//
+ 323   2          }  
+ 324   1          else if(RSDDetect.RSDSpeed>_Q15(1200.0/MOTOR_SPEED_BASE))
+ 325   1          {
+ 326   2            FOC__UQ=8000;//
+ 327   2          } 
+ 328   1          else if(RSDDetect.RSDSpeed>_Q15(200.0/MOTOR_SPEED_BASE))
+ 329   1          {
+ 330   2            FOC__UQ=4000;//
+ 331   2          }      
+ 332   1          FOC__UD=0;
+ 333   1          #if (EstimateAlgorithm == SMO)
+ 334   1          {
+ 335   2            //根据不同转速确启动的ATO_BW值
+ 336   2            if(RSDDetect.RSDSpeed>_Q15(360.0/MOTOR_SPEED_BASE))
+ 337   2            {
+ 338   3              FOC_EKP                       = OBSW_KP_GAIN_RUN4;
+ 339   3              FOC_EKI                       = OBSW_KI_GAIN_RUN4;
+ 340   3              mcFocCtrl.mcIqref             = IQ_RUN_CURRENT;
+ 341   3              mcFocCtrl.State_Count         = 100;
+ 342   3            }
+ 343   2            else if(RSDDetect.RSDSpeed>_Q15(160.0/MOTOR_SPEED_BASE))
+ 344   2            {
+ 345   3              FOC_EKP                       = OBSW_KP_GAIN_RUN3;
+ 346   3              FOC_EKI                       = OBSW_KI_GAIN_RUN3;
+ 347   3              mcFocCtrl.mcIqref             = IQ_RUN_CURRENT;
+ 348   3              mcFocCtrl.State_Count         = 100;
+ 349   3            }
+ 350   2            else
+ 351   2            {
+ 352   3              FOC_EKP                       = OBSW_KP_GAIN_RUN2;
+C51 COMPILER V9.52.0.0   RSDDETECT                                                         04/16/2020 10:07:50 PAGE 7   
+
+ 353   3              FOC_EKI                       = OBSW_KI_GAIN_RUN2;
+ 354   3              mcFocCtrl.mcIqref             = IQ_RUN_CURRENT;
+ 355   3              mcFocCtrl.State_Count         = 100;
+ 356   3            }
+ 357   2          }
+ 358   1          #elif (EstimateAlgorithm == PLL)
+                  {
+                     FOC_EKP                        = OBSW_KP_GAIN_RUN4;
+                     FOC_EKI                        = OBSW_KI_GAIN_RUN4;
+                     mcFocCtrl.mcIqref              = IQ_RUN_CURRENT;
+                  }
+                  #endif //end  EstimateAlgorithm
+ 365   1          
+ 366   1          FOC_OMEKLPF                     = SPEED_KLPF;
+ 367   1          mcState                         = mcRun;
+ 368   1          mcFocCtrl.CtrlMode              = 0;
+ 369   1      
+ 370   1          /*使能输出*/
+ 371   1          DRV_CMR |= 0x3F;                         // U、V、W相输出
+ 372   1          MOE = 1;
+ 373   1          EA=1;
+ 374   1      }
+ 375          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1182    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
